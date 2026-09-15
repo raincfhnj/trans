@@ -1,0 +1,298 @@
+package deepl_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"trans/internal/deepl"
+	"trans/internal/translation"
+)
+
+type capturedRequest struct {
+	authorization string
+	body          map[string]any
+}
+
+func serverReturning(t *testing.T, status int, response string) (*httptest.Server, *capturedRequest) {
+	t.Helper()
+	captured := &capturedRequest{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captured.authorization = r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &captured.body)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, response)
+	}))
+	t.Cleanup(server.Close)
+	return server, captured
+}
+
+func TestTranslateReturnsTheEnglishTextForTheDraft(t *testing.T) {
+	t.Parallel()
+	server, captured := serverReturning(t, http.StatusOK,
+		`{"translations":[{"detected_source_language":"DE","text":"Please fix the failing test"}]}`)
+	client := deepl.New("key-123", deepl.WithEndpoint(server.URL))
+
+	translated, err := client.Translate(context.Background(), "Bitte behebe den fehlschlagenden Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if translated != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translated text", translated)
+	}
+	if captured.authorization != "DeepL-Auth-Key key-123" {
+		t.Errorf("request carried authorization %q, want the DeepL auth scheme", captured.authorization)
+	}
+	if got, ok := captured.body["text"].([]any); !ok || len(got) != 1 || got[0] != "Bitte behebe den fehlschlagenden Test" {
+		t.Errorf("request sent text %v, want the draft as a single entry", captured.body["text"])
+	}
+	if captured.body["target_lang"] != "EN-US" {
+		t.Errorf("request asked for %v, want EN-US", captured.body["target_lang"])
+	}
+}
+
+func TestTranslateReportsAnUnsuccessfulResponse(t *testing.T) {
+	t.Parallel()
+	server, _ := serverReturning(t, http.StatusForbidden, `{"message":"Authorization failed"}`)
+	client := deepl.New("wrong-key", deepl.WithEndpoint(server.URL))
+
+	_, err := client.Translate(context.Background(), "Bitte behebe den Test")
+
+	if err == nil {
+		t.Fatal("Translate returned no error, want the rejected request")
+	}
+	if !strings.Contains(err.Error(), "Authorization failed") {
+		t.Errorf("error %q does not carry DeepL's explanation", err)
+	}
+}
+
+func TestTranslateReportsAResponseWithoutTranslations(t *testing.T) {
+	t.Parallel()
+	server, _ := serverReturning(t, http.StatusOK, `{"translations":[]}`)
+	client := deepl.New("key-123", deepl.WithEndpoint(server.URL))
+
+	_, err := client.Translate(context.Background(), "Bitte behebe den Test")
+
+	if err == nil {
+		t.Fatal("Translate returned no error, want a complaint about the empty response")
+	}
+}
+
+func TestFreeApiKeysUseTheFreeEndpoint(t *testing.T) {
+	t.Parallel()
+
+	if endpoint := deepl.New("abc123:fx").Endpoint(); endpoint != "https://api-free.deepl.com/v2/translate" {
+		t.Errorf("free key resolved to %q, want the api-free host", endpoint)
+	}
+	if endpoint := deepl.New("abc123").Endpoint(); endpoint != "https://api.deepl.com/v2/translate" {
+		t.Errorf("pro key resolved to %q, want the api host", endpoint)
+	}
+}
+
+func TestTranslateWithContextSendsTheSurroundingsUnbilled(t *testing.T) {
+	t.Parallel()
+	server, captured := serverReturning(t, http.StatusOK,
+		`{"translations":[{"text":"Second sentence!"}]}`)
+	client := deepl.New("key-123", deepl.WithEndpoint(server.URL))
+
+	translated, err := client.TranslateWithContext(
+		context.Background(), "Zweiter Satz!", "Erster Satz.")
+	if err != nil {
+		t.Fatalf("TranslateWithContext returned unexpected error: %v", err)
+	}
+	if translated != "Second sentence!" {
+		t.Errorf("returned %q, want the translated sentence", translated)
+	}
+	if got, ok := captured.body["text"].([]any); !ok || len(got) != 1 || got[0] != "Zweiter Satz!" {
+		t.Errorf("request translated %v, want only the sentence", captured.body["text"])
+	}
+	if captured.body["context"] != "Erster Satz." {
+		t.Errorf("request carried context %v, want the surrounding draft", captured.body["context"])
+	}
+}
+
+func TestTranslateSendsNoContextFieldWhenThereIsNone(t *testing.T) {
+	t.Parallel()
+	server, captured := serverReturning(t, http.StatusOK,
+		`{"translations":[{"text":"Please fix it"}]}`)
+	client := deepl.New("key-123", deepl.WithEndpoint(server.URL))
+
+	if _, err := client.Translate(context.Background(), "Bitte behebe es"); err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+
+	if _, present := captured.body["context"]; present {
+		t.Errorf("request carried a context field %v, want it omitted", captured.body["context"])
+	}
+}
+
+func TestAPlainHttpEndpointIsRefusedSoTheKeyIsNotSentInClear(t *testing.T) {
+	t.Parallel()
+
+	_, err := deepl.Provider{}.New(translation.Options{
+		APIKey:   "key-123",
+		Endpoint: "http://translate.example/v2",
+	})
+
+	if err == nil {
+		t.Fatal("New returned no error, want the plain-text endpoint refused")
+	}
+	if !strings.Contains(err.Error(), "https") {
+		t.Errorf("error %q does not explain that https is required", err)
+	}
+}
+
+func TestALocalHttpEndpointIsAllowedForTesting(t *testing.T) {
+	t.Parallel()
+
+	if _, err := (deepl.Provider{}).New(translation.Options{
+		APIKey:   "key-123",
+		Endpoint: "http://127.0.0.1:8080/v2",
+	}); err != nil {
+		t.Errorf("New refused a loopback endpoint: %v", err)
+	}
+}
+
+func TestAnEnormousResponseIsNotReadWithoutLimit(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"translations":[{"text":"`))
+		for range 4096 {
+			if _, err := w.Write(bytes.Repeat([]byte("A"), 1024)); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe es")
+
+	if err == nil {
+		t.Error("Translate accepted an unbounded response, want it cut off")
+	}
+}
+
+// However the client was built: refusing to carry the key off https is not
+// something a caller has to remember to ask for.
+func TestARedirectToPlainHttpIsRefusedSoTheKeyStays(t *testing.T) {
+	t.Parallel()
+
+	var plainReached bool
+	plain := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		plainReached = r.Header.Get("Authorization") != ""
+	}))
+	t.Cleanup(plain.Close)
+
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirecting.Close)
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(redirecting.URL)).
+		Translate(context.Background(), "Bitte behebe es")
+
+	if err == nil {
+		t.Error("Translate followed a redirect away from https, want it refused")
+	}
+	if plainReached {
+		t.Error("the key was sent to the redirect target")
+	}
+}
+
+// DeepL turns away a request over 128 KiB, so an enormous draft is worth saying
+// something about before it crosses the network.
+func TestADraftTooLongToTranslateIsRefusedBeforeItIsSent(t *testing.T) {
+	t.Parallel()
+	var reached bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(server.URL)).
+		Translate(context.Background(), strings.Repeat("sehr lang ", 20_000))
+
+	if err == nil {
+		t.Error("Translate sent an oversized draft, want it refused here")
+	}
+	if reached {
+		t.Error("the oversized draft was sent anyway")
+	}
+}
+
+func TestUsageReportsWhatTheKeyHasSpent(t *testing.T) {
+	t.Parallel()
+	var asked string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"character_count":12345,"character_limit":1000000}`)
+	}))
+	t.Cleanup(server.Close)
+
+	spent, err := deepl.New("key-123", deepl.WithEndpoint(server.URL+"/v2/translate")).
+		Usage(context.Background())
+	if err != nil {
+		t.Fatalf("Usage returned unexpected error: %v", err)
+	}
+	if spent.Used != 12345 || spent.Limit != 1000000 {
+		t.Errorf("Usage returned %+v, want 12345 of 1000000", spent)
+	}
+	if asked != "/v2/usage" {
+		t.Errorf("Usage asked %q, want the usage endpoint beside the translate one", asked)
+	}
+}
+
+func TestAServiceThatDoesNotAnswerInTimeSaysThatPlainly(t *testing.T) {
+	t.Parallel()
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		_, _ = io.WriteString(w, `{"translations":[{"text":"too late"}]}`)
+	}))
+	t.Cleanup(slow.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(slow.URL)).
+		Translate(ctx, "Bitte behebe den Test")
+	if err == nil {
+		t.Fatal("Translate returned no error for a service that did not answer")
+	}
+	if !strings.Contains(err.Error(), "did not answer in time") {
+		t.Errorf("Translate returned %v, want a sentence about the time", err)
+	}
+	for _, dump := range []string{"http://", "Client.Timeout", "context deadline"} {
+		if strings.Contains(err.Error(), dump) {
+			t.Errorf("Translate returned %v, which still carries %q", err, dump)
+		}
+	}
+}
+
+func TestAServiceThatCannotBeReachedSaysThatPlainly(t *testing.T) {
+	t.Parallel()
+	closed := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	address := closed.URL
+	closed.Close()
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(address)).
+		Translate(context.Background(), "Bitte behebe den Test")
+	if err == nil {
+		t.Fatal("Translate returned no error for a service that is not there")
+	}
+	if !strings.Contains(err.Error(), "deepl could not be") {
+		t.Errorf("Translate returned %v, want a sentence about reaching it", err)
+	}
+}

@@ -1,0 +1,102 @@
+// Package draft keeps an unfinished prompt for the pane it was written for, so
+// closing the popup costs nothing and the thought can be picked up again.
+package draft
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Store is a directory of drafts, one per pane.
+type Store struct{ directory string }
+
+// NewStore takes the directory herdr set aside for this plugin's state. An empty
+// directory means drafts are simply not kept.
+func NewStore(directory string) Store {
+	return Store{directory: directory}
+}
+
+func (s Store) For(target string) Slot {
+	if s.directory == "" {
+		return Slot{}
+	}
+	return Slot{path: filepath.Join(s.directory, fileName(target))}
+}
+
+// Slot is the draft belonging to one pane.
+type Slot struct{ path string }
+
+// Load returns nothing when there is no draft. Any other trouble is reported: a
+// draft that is there but unreadable would otherwise look like an empty box, and
+// the next save would write over it.
+func (s Slot) Load() (string, error) {
+	if s.path == "" {
+		return "", nil
+	}
+
+	kept, err := os.ReadFile(s.path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", nil
+	case err != nil:
+		return "", fmt.Errorf("reading the kept draft: %w", err)
+	}
+	return string(kept), nil
+}
+
+// Save keeps the draft, or removes it when there is nothing left to keep. It
+// writes a fresh file and moves it into place, which keeps the draft private
+// even if something replaced the old file with a link or loosened its access.
+func (s Slot) Save(text string) error {
+	if s.path == "" {
+		return nil
+	}
+	if strings.TrimSpace(text) == "" {
+		return s.Clear()
+	}
+
+	// A draft is unfinished thinking about the author's own work.
+	fresh, err := os.CreateTemp(filepath.Dir(s.path), "writing-*")
+	if err != nil {
+		return fmt.Errorf("keeping the draft: %w", err)
+	}
+	defer os.Remove(fresh.Name())
+
+	if err := fresh.Chmod(0o600); err != nil {
+		_ = fresh.Close()
+		return fmt.Errorf("keeping the draft private: %w", err)
+	}
+	if _, err := fresh.WriteString(text); err != nil {
+		_ = fresh.Close()
+		return fmt.Errorf("keeping the draft: %w", err)
+	}
+	if err := fresh.Close(); err != nil {
+		return fmt.Errorf("keeping the draft: %w", err)
+	}
+	if err := os.Rename(fresh.Name(), s.path); err != nil {
+		return fmt.Errorf("keeping the draft: %w", err)
+	}
+	return nil
+}
+
+func (s Slot) Clear() error {
+	if s.path == "" {
+		return nil
+	}
+	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("forgetting the draft: %w", err)
+	}
+	return nil
+}
+
+// fileName turns a pane id into one path component. Hashing keeps a target that
+// contains separators from pointing anywhere but the store.
+func fileName(target string) string {
+	digest := sha256.Sum256([]byte(target))
+	return "draft-" + hex.EncodeToString(digest[:8])
+}

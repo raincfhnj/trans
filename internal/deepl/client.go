@@ -1,0 +1,204 @@
+// Package deepl translates drafts through the DeepL API.
+package deepl
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"trans/internal/translation"
+)
+
+const (
+	proEndpoint  = "https://api.deepl.com/v2/translate"
+	freeEndpoint = "https://api-free.deepl.com/v2/translate"
+	// DeepL marks free-tier keys with this suffix, and they only work on the free host.
+	freeKeySuffix = ":fx"
+
+	defaultTargetLanguage = "EN-US"
+	defaultTimeout        = 15 * time.Second
+
+	maxErrorBodyBytes = 2 << 10
+	// A translated prompt is small; anything larger is a broken or hostile
+	// endpoint rather than a translation.
+	maxResponseBytes = 1 << 20
+	// DeepL refuses a request larger than 128 KiB, so say so here rather than
+	// send a draft across the network to be turned away.
+	maxRequestBytes = 128 << 10
+)
+
+type Client struct {
+	httpClient     *http.Client
+	endpoint       string
+	apiKey         string
+	targetLanguage string
+}
+
+type Option func(*Client)
+
+func WithEndpoint(endpoint string) Option {
+	return func(c *Client) { c.endpoint = endpoint }
+}
+
+func WithTargetLanguage(language string) Option {
+	return func(c *Client) { c.targetLanguage = language }
+}
+
+// refuseInsecureRedirect keeps the key from following a redirect off https. Go
+// carries the credential header when a host redirects to itself, downgrade
+// included, so this is installed for every client rather than asked for.
+func refuseInsecureRedirect(request *http.Request, _ []*http.Request) error {
+	if request.URL.Scheme != "https" {
+		return fmt.Errorf("refusing a redirect to %s: the API key travels with it",
+			request.URL.Scheme)
+	}
+	return nil
+}
+
+func New(apiKey string, options ...Option) *Client {
+	client := &Client{
+		httpClient:     &http.Client{Timeout: defaultTimeout},
+		endpoint:       endpointFor(apiKey),
+		apiKey:         apiKey,
+		targetLanguage: defaultTargetLanguage,
+	}
+	for _, option := range options {
+		option(client)
+	}
+	// After the options, so no way of building a client can leave the key free to
+	// follow a redirect into the clear.
+	client.httpClient.CheckRedirect = refuseInsecureRedirect
+	return client
+}
+
+func endpointFor(apiKey string) string {
+	if strings.HasSuffix(apiKey, freeKeySuffix) {
+		return freeEndpoint
+	}
+	return proEndpoint
+}
+
+func (c *Client) Endpoint() string {
+	return c.endpoint
+}
+
+type translateRequest struct {
+	Text               []string `json:"text"`
+	TargetLang         string   `json:"target_lang"`
+	PreserveFormatting bool     `json:"preserve_formatting"`
+	// Context informs the translation without being translated or billed.
+	Context string `json:"context,omitempty"`
+}
+
+type translateResponse struct {
+	Translations []struct {
+		Text string `json:"text"`
+	} `json:"translations"`
+}
+
+func (c *Client) Translate(ctx context.Context, draft string) (string, error) {
+	return c.TranslateWithContext(ctx, draft, "")
+}
+
+func (c *Client) TranslateWithContext(ctx context.Context, draft, surrounding string) (string, error) {
+	body, err := json.Marshal(translateRequest{
+		Text:               []string{draft},
+		TargetLang:         c.targetLanguage,
+		PreserveFormatting: true,
+		Context:            surrounding,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encoding request: %w", err)
+	}
+	if len(body) > maxRequestBytes {
+		return "", fmt.Errorf("draft is too long to translate: %d of %d bytes",
+			len(body), maxRequestBytes)
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("building request: %w", err)
+	}
+	request.Header.Set("Authorization", "DeepL-Auth-Key "+c.apiKey)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return "", translation.Trouble("deepl", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("DeepL rejected the request: %s: %s",
+			response.Status, explanation(response.Body))
+	}
+
+	var decoded translateResponse
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes)).Decode(&decoded); err != nil {
+		return "", fmt.Errorf("decoding response: %w", err)
+	}
+	if len(decoded.Translations) == 0 {
+		return "", errors.New("DeepL returned no translation")
+	}
+	return decoded.Translations[0].Text, nil
+}
+
+// The characters this call costs are not counted against the allowance.
+func (c *Client) Usage(ctx context.Context) (translation.Usage, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.usageEndpoint(), http.NoBody)
+	if err != nil {
+		return translation.Usage{}, fmt.Errorf("building usage request: %w", err)
+	}
+	request.Header.Set("Authorization", "DeepL-Auth-Key "+c.apiKey)
+
+	response, err := c.httpClient.Do(request)
+	if err != nil {
+		return translation.Usage{}, fmt.Errorf("asking DeepL about usage: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return translation.Usage{}, fmt.Errorf("DeepL rejected the usage request: %s: %s",
+			response.Status, explanation(response.Body))
+	}
+
+	var decoded struct {
+		Count int64 `json:"character_count"`
+		Limit int64 `json:"character_limit"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes)).Decode(&decoded); err != nil {
+		return translation.Usage{}, fmt.Errorf("decoding usage: %w", err)
+	}
+	return translation.Usage{Used: decoded.Count, Limit: decoded.Limit}, nil
+}
+
+func (c *Client) usageEndpoint() string {
+	if trimmed, found := strings.CutSuffix(c.endpoint, "/translate"); found {
+		return trimmed + "/usage"
+	}
+	return c.endpoint + "/usage"
+}
+
+func explanation(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
+	if err != nil {
+		return "no details"
+	}
+
+	var problem struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &problem); err == nil && problem.Message != "" {
+		return problem.Message
+	}
+	if trimmed := strings.TrimSpace(string(raw)); trimmed != "" {
+		return trimmed
+	}
+	return "no details"
+}

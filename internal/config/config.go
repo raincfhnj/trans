@@ -200,5 +200,8 @@ func readDotenv(path string) map[string]string {
 		}
 		values[strings.TrimSpace(key)] = strings.Trim(strings.TrimSpace(value), `"'`)
 	}
+	if err := lines.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "trans: warning: reading %s: %v\n", path, err)
+	}
 	return values
 }

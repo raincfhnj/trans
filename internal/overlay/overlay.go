@@ -344,6 +344,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, beating
 
 	case promptSentMsg:
+		m.delivered = true
 		m.forgetDraft()
 		// Neither way of delivering closes the panel: a sent prompt and one that
 		// was only typed into the agent's input both leave the box empty and
@@ -577,7 +578,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Type == tea.KeyCtrlR:
 		return m.switchDelivery(), nil
 
-	case (key.Type == tea.KeyCtrlL || key.Type == tea.KeyCtrlT || key.Type == tea.KeyTab) &&
+	case (key.Type == tea.KeyCtrlL || key.Type == tea.KeyCtrlT) &&
 		!m.translating():
 		return m.raiseNotice(errNoService)
 

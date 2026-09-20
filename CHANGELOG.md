@@ -176,7 +176,7 @@ meets other people's terminals — that is what the 0.x is for.
 - Prebuilt binaries for macOS and Linux on arm64 and amd64, published with
   checksums and build provenance. Installing needs no Go toolchain.
 
-[0.4.0]: https://github.com/wazum/herdr-polyglot/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/wazum/herdr-polyglot/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/wazum/herdr-polyglot/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/wazum/herdr-polyglot/releases/tag/v0.1.0
+[0.4.0]: https://github.com/raincfhnj/trans/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/raincfhnj/trans/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/raincfhnj/trans/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/raincfhnj/trans/releases/tag/v0.1.0

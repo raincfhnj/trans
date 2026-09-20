@@ -1,9 +1,7 @@
 //go:build windows
 
-// Command trans-window is the Windows side of trans. There is no herdr on
-// this machine to host a popup, so the panel brings its own window and opens it
-// over the pane the prompt is written for; the draft box, the keys, the
-// translation and the kept draft are the plugin's, unchanged.
+// Command trans-window is a native Windows translation panel. It opens its own
+// window over the target window and delivers the translated prompt via paste.
 //
 //	trans-window                 the panel itself, opened by `open`
 //	trans-window open            opens the panel over the window in front
@@ -39,7 +37,7 @@ import (
 )
 
 func main() {
-	winlog.Note("panel", "started with %q, target %q", os.Args, os.Getenv("HERDR_TRANS_TARGET"))
+	winlog.Note("panel", "started with %q, target %q", os.Args, os.Getenv("TRANS_TARGET"))
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -96,7 +94,7 @@ func runOpen(arguments []string) error {
 		}
 	}
 	if setting == "" {
-		setting = os.Getenv("HERDR_TRANS_TARGET")
+		setting = os.Getenv("TRANS_TARGET")
 	}
 
 	var window win32.Window
@@ -119,12 +117,12 @@ func runOpen(arguments []string) error {
 	}
 
 	environment := append(os.Environ(),
-		fmt.Sprintf("HERDR_TRANS_TARGET=%#x", window.Handle),
-		"HERDR_TRANS_TARGET_TITLE="+window.Title,
-		"HERDR_TRANS_SUBMIT="+boolSetting(submit),
+		fmt.Sprintf("TRANS_TARGET=%#x", window.Handle),
+		"TRANS_TARGET_TITLE="+window.Title,
+		"TRANS_SUBMIT="+boolSetting(submit),
 	)
 	if probe != "" {
-		environment = append(environment, "HERDR_TRANS_PROBE_MS="+probe)
+		environment = append(environment, "TRANS_PROBE_MS="+probe)
 	}
 
 	// Windows Terminal places a window better than a console window places
@@ -254,7 +252,7 @@ func runPanel() error {
 
 	// A check that the panel lands where it belongs, with nobody sitting in
 	// front of it: the panel closes itself again after the time asked for.
-	if probe := os.Getenv("HERDR_TRANS_PROBE_MS"); probe != "" {
+	if probe := os.Getenv("TRANS_PROBE_MS"); probe != "" {
 		if milliseconds, err := strconv.Atoi(probe); err == nil && milliseconds > 0 {
 			go func() {
 				time.Sleep(time.Duration(milliseconds) * time.Millisecond)
@@ -316,8 +314,8 @@ func translate(arguments []string) error {
 	defaultDirectories()
 	// Nothing is delivered here, so there is no pane to name; the setting is only
 	// what a panel would need.
-	if os.Getenv("HERDR_TRANS_TARGET") == "" {
-		os.Setenv("HERDR_TRANS_TARGET", "none")
+	if os.Getenv("TRANS_TARGET") == "" {
+		os.Setenv("TRANS_TARGET", "none")
 	}
 
 	settings, err := config.Load(os.Getenv)
@@ -333,19 +331,18 @@ func translate(arguments []string) error {
 	return nil
 }
 
-// defaultDirectories gives the panel the two directories herdr would have set
-// aside for the plugin, so a setting and a draft have a place to live.
+// defaultDirectories gives the panel the directories for settings and drafts.
 func defaultDirectories() {
-	if os.Getenv("HERDR_PLUGIN_CONFIG_DIR") == "" {
+	if os.Getenv("TRANS_CONFIG_DIR") == "" {
 		if directory, err := os.UserConfigDir(); err == nil {
-			os.Setenv("HERDR_PLUGIN_CONFIG_DIR", filepath.Join(directory, "trans"))
+			os.Setenv("TRANS_CONFIG_DIR", filepath.Join(directory, "trans"))
 		}
 	}
-	if os.Getenv("HERDR_PLUGIN_STATE_DIR") == "" {
+	if os.Getenv("TRANS_STATE_DIR") == "" {
 		if directory, err := os.UserCacheDir(); err == nil {
 			state := filepath.Join(directory, "trans", "state")
 			_ = os.MkdirAll(state, 0o700)
-			os.Setenv("HERDR_PLUGIN_STATE_DIR", state)
+			os.Setenv("TRANS_STATE_DIR", state)
 		}
 	}
 	writeStarterEnv()
@@ -354,7 +351,7 @@ func defaultDirectories() {
 // A directory with nothing in it is not much of a start, since the settings are
 // files rather than a screen of options.
 func writeStarterEnv() {
-	directory := os.Getenv("HERDR_PLUGIN_CONFIG_DIR")
+	directory := os.Getenv("TRANS_CONFIG_DIR")
 	if directory == "" {
 		return
 	}
@@ -370,16 +367,16 @@ func writeStarterEnv() {
 		"# variable of the same name wins over it.\n" +
 		"#\n" +
 		"# Without a key, the free service needs no account at all:\n" +
-		"#   HERDR_TRANS_PROVIDER=gtranslate\n" +
+		"#   TRANS_PROVIDER=gtranslate\n" +
 		"#\n" +
 		"# A key means DeepL, and free keys end in :fx:\n" +
-		"#   HERDR_TRANS_API_KEY=your-key\n" +
+		"#   TRANS_API_KEY=your-key\n" +
 		"#\n" +
 		"# Any OpenAI-compatible API, a gateway or a model on this machine:\n" +
-		"#   HERDR_TRANS_PROVIDER=openai\n" +
-		"#   HERDR_TRANS_API_KEY=sk-...\n" +
-		"#   HERDR_TRANS_ENDPOINT=https://api.deepseek.com/v1\n" +
-		"#   HERDR_TRANS_MODEL=deepseek-chat\n"
+		"#   TRANS_PROVIDER=openai\n" +
+		"#   TRANS_API_KEY=sk-...\n" +
+		"#   TRANS_ENDPOINT=https://api.deepseek.com/v1\n" +
+		"#   TRANS_MODEL=deepseek-chat\n"
 	_ = os.WriteFile(file, []byte(starter), 0o600)
 }
 

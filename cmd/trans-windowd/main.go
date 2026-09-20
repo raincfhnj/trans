@@ -5,10 +5,10 @@
 // builds it as a program without a console, so it can sit in the background
 // from a logon entry and do nothing until the hotkey is pressed.
 //
-// The combination is HERDR_TRANS_HOTKEY, `ctrl+alt+t` unless it says
+// The combination is TRANS_HOTKEY, `ctrl+alt+t` unless it says
 // otherwise. Everything else the panel reads for itself, from the environment
-// and from the plugin's .env, so a setting changed there is picked up by the
-// next popup rather than needing this program restarted.
+// and from the .env file, so a setting changed there is picked up by the next
+// popup rather than needing this program restarted.
 package main
 
 import (
@@ -22,7 +22,7 @@ import (
 
 func main() {
 
-	spec := os.Getenv("HERDR_TRANS_HOTKEY")
+	spec := os.Getenv("TRANS_HOTKEY")
 	if spec == "" {
 		spec = "ctrl+alt+t"
 	}

@@ -1,7 +1,7 @@
 //go:build !windows
 
-// The panel is a Windows program: there is no herdr to host it anywhere else,
-// and a window opened over a terminal is something only Windows does this way.
+// The panel is a Windows program: a window opened over a terminal is something
+// only Windows does this way.
 package main
 
 import (
@@ -10,6 +10,6 @@ import (
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "trans-window is for Windows; use the herdr plugin elsewhere")
+	fmt.Fprintln(os.Stderr, "trans-window is for Windows only")
 	os.Exit(1)
 }

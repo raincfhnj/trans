@@ -1,6 +1,6 @@
 # trans
 
-[![Go](https://img.shields.io/github/go-mod/go-version/wazum/herdr-polyglot)](go.mod)
+[![Go](https://img.shields.io/github/go-mod/go-version/raincfhnj/trans)](go.mod)
 [![herdr](https://img.shields.io/badge/herdr-%E2%89%A5%200.8.0-6C3EF5)](https://herdr.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -14,8 +14,6 @@ This is a fork of [wazum/herdr-polyglot](https://github.com/wazum/herdr-polyglot
 with three more services — the free *Google* endpoint and *MyMemory* need no key
 at all, and any *OpenAI*-compatible API can be used with one. The plugin's own id
 here is `local.trans`.
-
-![the popup over a Claude Code pane: a German prompt written, translated, and
 
 ## Why this exists
 

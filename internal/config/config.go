@@ -1,6 +1,6 @@
-// Package config resolves the plugin's settings from the environment herdr
-// provides and from the .env file in the plugin's own config directory. It
-// stays neutral about which translation service is used.
+// Package config resolves the plugin's settings from the environment and
+// from the .env file in the config directory. It stays neutral about which
+// translation service is used.
 package config
 
 import (
@@ -15,28 +15,27 @@ import (
 )
 
 const (
-	targetVar    = "HERDR_TRANS_TARGET"
-	providerVar  = "HERDR_TRANS_PROVIDER"
-	apiKeyVar    = "HERDR_TRANS_API_KEY"
-	languageVar  = "HERDR_TRANS_LANGUAGE"
-	endpointVar  = "HERDR_TRANS_ENDPOINT"
-	modelVar     = "HERDR_TRANS_MODEL"
-	pasteVar     = "HERDR_TRANS_PASTE_KEYS"
-	commandVar   = "HERDR_TRANS_COMMAND"
-	submitVar    = "HERDR_TRANS_SUBMIT"
-	vimVar       = "HERDR_TRANS_VIM"
-	liveVar      = "HERDR_TRANS_LIVE"
-	keepDraftVar = "HERDR_TRANS_KEEP_DRAFT"
-	confirmVar   = "HERDR_TRANS_CONFIRM"
-	maxDraftVar  = "HERDR_TRANS_MAX_DRAFT"
-	pulseVar     = "HERDR_TRANS_PULSE"
-	logoVar      = "HERDR_TRANS_LOGO"
-	stateDirVar  = "HERDR_PLUGIN_STATE_DIR"
-	configDirVar = "HERDR_PLUGIN_CONFIG_DIR"
-	binaryVar    = "HERDR_BIN_PATH"
+	targetVar    = "TRANS_TARGET"
+	providerVar  = "TRANS_PROVIDER"
+	apiKeyVar    = "TRANS_API_KEY"
+	languageVar  = "TRANS_LANGUAGE"
+	endpointVar  = "TRANS_ENDPOINT"
+	modelVar     = "TRANS_MODEL"
+	pasteVar     = "TRANS_PASTE_KEYS"
+	commandVar   = "TRANS_COMMAND"
+	submitVar    = "TRANS_SUBMIT"
+	vimVar       = "TRANS_VIM"
+	liveVar      = "TRANS_LIVE"
+	keepDraftVar = "TRANS_KEEP_DRAFT"
+	confirmVar   = "TRANS_CONFIRM"
+	maxDraftVar  = "TRANS_MAX_DRAFT"
+	pulseVar     = "TRANS_PULSE"
+	logoVar      = "TRANS_LOGO"
+	hotkeyVar    = "TRANS_HOTKEY"
+	configDirVar = "TRANS_CONFIG_DIR"
+	stateDirVar  = "TRANS_STATE_DIR"
 
 	defaultLanguage = "EN-US"
-	defaultBinary   = "herdr"
 	dotenvName      = ".env"
 )
 
@@ -47,26 +46,27 @@ type Settings struct {
 	Options    translation.Options
 	ConfigFile string
 	// StateDir is where an unfinished prompt is kept between sessions.
-	StateDir    string
-	HerdrBinary string
-	Submit      bool
-	Vim         bool
-	Live        bool
-	KeepDraft   bool
-	Confirm     bool
-	Pulse       bool
-	Logo        bool
-	MaxDraft    int
+	StateDir string
+	Submit   bool
+	Vim      bool
+	Live     bool
+	KeepDraft bool
+	Confirm   bool
+	Pulse     bool
+	Logo      bool
+	MaxDraft  int
 	// PasteKeys is the chord a terminal takes for a paste, for the panel on
 	// Windows. What is left empty is worked out from the terminal in front.
 	PasteKeys string
+	// Hotkey is the key combination that opens the panel (Windows daemon).
+	Hotkey string
 }
 
 // The environment wins over the .env file, so a one-off invocation can
 // override stored settings. Credentials are passed along unchecked: only the
 // service knows what it needs.
 func Load(getenv func(string) string) (Settings, error) {
-	// Without the directory herdr sets aside there is nothing of ours to read.
+	// Without the directory there is nothing of ours to read.
 	// Falling back to a relative path would let a .env in whatever directory
 	// the process started in decide the settings.
 	configFile := ""
@@ -86,23 +86,23 @@ func Load(getenv func(string) string) (Settings, error) {
 	provider := lookup(providerVar)
 
 	// A setting that cannot be read is not quietly taken as off: a typo in
-	// HERDR_TRANS_SUBMIT would otherwise send every prompt to the agent.
+	// TRANS_SUBMIT would otherwise send every prompt to the agent.
 	given := &reading{lookup: lookup}
 	settings := Settings{
-		Target:      lookup(targetVar),
-		Provider:    provider,
-		ConfigFile:  configFile,
-		StateDir:    getenv(stateDirVar),
-		HerdrBinary: orDefault(lookup(binaryVar), defaultBinary),
-		Submit:      given.flag(submitVar, true),
-		Vim:         given.flag(vimVar, false),
-		Live:        given.flag(liveVar, true),
-		KeepDraft:   given.flag(keepDraftVar, true),
-		Confirm:     given.flag(confirmVar, false),
-		Pulse:       given.flag(pulseVar, true),
-		Logo:        given.flag(logoVar, true),
-		MaxDraft:    given.number(maxDraftVar),
-		PasteKeys:   lookup(pasteVar),
+		Target:     lookup(targetVar),
+		Provider:   provider,
+		ConfigFile: configFile,
+		StateDir:   lookup(stateDirVar),
+		Submit:     given.flag(submitVar, true),
+		Vim:        given.flag(vimVar, false),
+		Live:       given.flag(liveVar, true),
+		KeepDraft:  given.flag(keepDraftVar, true),
+		Confirm:    given.flag(confirmVar, false),
+		Pulse:      given.flag(pulseVar, true),
+		Logo:       given.flag(logoVar, true),
+		MaxDraft:   given.number(maxDraftVar),
+		PasteKeys:  lookup(pasteVar),
+		Hotkey:     lookup(hotkeyVar),
 		Options: translation.Options{
 			APIKey:         orDefault(lookup(scopedKeyVar(provider)), lookup(apiKeyVar)),
 			TargetLanguage: orDefault(lookup(languageVar), defaultLanguage),
@@ -114,9 +114,6 @@ func Load(getenv func(string) string) (Settings, error) {
 
 	if given.err != nil {
 		return Settings{}, given.err
-	}
-	if settings.Target == "" {
-		return Settings{}, fmt.Errorf("no target pane: %s is not set", targetVar)
 	}
 	return settings, nil
 }
@@ -170,7 +167,7 @@ func scopedKeyVar(provider string) string {
 		return ""
 	}
 	scope := strings.ToUpper(strings.NewReplacer("-", "_", ".", "_").Replace(provider))
-	return "HERDR_TRANS_" + scope + "_API_KEY"
+	return "TRANS_" + scope + "_API_KEY"
 }
 
 func orDefault(value, fallback string) string {

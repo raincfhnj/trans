@@ -26,8 +26,8 @@ func TestLoadTakesTheTargetAndCredentialsFromTheEnvironment(t *testing.T) {
 	t.Parallel()
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":  "w1:p3",
-		"HERDR_TRANS_API_KEY": "key-123",
+		"TRANS_TARGET":  "w1:p3",
+		"TRANS_API_KEY": "key-123",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -47,21 +47,17 @@ func TestLoadTakesTheTargetAndCredentialsFromTheEnvironment(t *testing.T) {
 	if settings.Options.TargetLanguage != "EN-US" {
 		t.Errorf("TargetLanguage is %q, want EN-US by default", settings.Options.TargetLanguage)
 	}
-	if settings.HerdrBinary != "herdr" {
-		t.Errorf("HerdrBinary is %q, want herdr by default", settings.HerdrBinary)
-	}
 }
 
 func TestLoadHonoursTheChosenServiceAndItsOptions(t *testing.T) {
 	t.Parallel()
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":   "w1:p3",
-		"HERDR_TRANS_PROVIDER": "dry-run",
-		"HERDR_TRANS_LANGUAGE": "EN-GB",
-		"HERDR_TRANS_ENDPOINT": "https://translate.example/v2",
-		"HERDR_TRANS_SUBMIT":   "0",
-		"HERDR_BIN_PATH":       "/opt/homebrew/bin/herdr",
+		"TRANS_TARGET":   "w1:p3",
+		"TRANS_PROVIDER": "dry-run",
+		"TRANS_LANGUAGE": "EN-GB",
+		"TRANS_ENDPOINT": "https://translate.example/v2",
+		"TRANS_SUBMIT":   "0",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -76,10 +72,7 @@ func TestLoadHonoursTheChosenServiceAndItsOptions(t *testing.T) {
 		t.Errorf("Endpoint is %q, want the configured one", settings.Options.Endpoint)
 	}
 	if settings.Submit {
-		t.Error("Submit is true, want it disabled by HERDR_TRANS_SUBMIT=0")
-	}
-	if settings.HerdrBinary != "/opt/homebrew/bin/herdr" {
-		t.Errorf("HerdrBinary is %q, want the path from HERDR_BIN_PATH", settings.HerdrBinary)
+		t.Error("Submit is true, want it disabled by TRANS_SUBMIT=0")
 	}
 }
 
@@ -90,8 +83,8 @@ func TestLoadKeepsTheTranslationCommandAsItWasWritten(t *testing.T) {
 	written := `translateLocally -m de-en-base | sed 's/  */ /g'`
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":  "w1:p3",
-		"HERDR_TRANS_COMMAND": written,
+		"TRANS_TARGET":  "w1:p3",
+		"TRANS_COMMAND": written,
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -101,13 +94,13 @@ func TestLoadKeepsTheTranslationCommandAsItWasWritten(t *testing.T) {
 	}
 }
 
-func TestLoadReadsSettingsFromTheDotEnvInThePluginConfigDirectory(t *testing.T) {
+func TestLoadReadsSettingsFromTheDotEnvInTheConfigDirectory(t *testing.T) {
 	t.Parallel()
-	configDir := configDirContaining(t, "# credentials\nHERDR_TRANS_API_KEY=key-from-file\nHERDR_TRANS_LANGUAGE=\"EN-GB\"\n")
+	configDir := configDirContaining(t, "# credentials\nTRANS_API_KEY=key-from-file\nTRANS_LANGUAGE=\"EN-GB\"\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":      "w1:p3",
-		"HERDR_PLUGIN_CONFIG_DIR": configDir,
+		"TRANS_TARGET":      "w1:p3",
+		"TRANS_CONFIG_DIR": configDir,
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -125,12 +118,12 @@ func TestLoadReadsSettingsFromTheDotEnvInThePluginConfigDirectory(t *testing.T) 
 
 func TestAServiceSpecificKeyWinsOverTheGenericOne(t *testing.T) {
 	t.Parallel()
-	configDir := configDirContaining(t, "HERDR_TRANS_API_KEY=generic-key\nHERDR_TRANS_ACME_API_KEY=acme-key\n")
+	configDir := configDirContaining(t, "TRANS_API_KEY=generic-key\nTRANS_ACME_API_KEY=acme-key\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":      "w1:p3",
-		"HERDR_TRANS_PROVIDER":    "acme",
-		"HERDR_PLUGIN_CONFIG_DIR": configDir,
+		"TRANS_TARGET":      "w1:p3",
+		"TRANS_PROVIDER":    "acme",
+		"TRANS_CONFIG_DIR": configDir,
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -142,12 +135,12 @@ func TestAServiceSpecificKeyWinsOverTheGenericOne(t *testing.T) {
 
 func TestTheEnvironmentWinsOverTheDotEnvFile(t *testing.T) {
 	t.Parallel()
-	configDir := configDirContaining(t, "HERDR_TRANS_API_KEY=key-from-file\n")
+	configDir := configDirContaining(t, "TRANS_API_KEY=key-from-file\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":      "w1:p3",
-		"HERDR_PLUGIN_CONFIG_DIR": configDir,
-		"HERDR_TRANS_API_KEY":     "key-from-environment",
+		"TRANS_TARGET":      "w1:p3",
+		"TRANS_CONFIG_DIR": configDir,
+		"TRANS_API_KEY":     "key-from-environment",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
@@ -160,7 +153,7 @@ func TestTheEnvironmentWinsOverTheDotEnvFile(t *testing.T) {
 func TestLoadLeavesMissingCredentialsToTheService(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -169,23 +162,10 @@ func TestLoadLeavesMissingCredentialsToTheService(t *testing.T) {
 	}
 }
 
-func TestLoadWithoutATargetFails(t *testing.T) {
-	t.Parallel()
-
-	_, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_API_KEY": "key-123"}))
-
-	if err == nil {
-		t.Fatal("Load returned no error, want a complaint about the missing target")
-	}
-	if !strings.Contains(err.Error(), "HERDR_TRANS_TARGET") {
-		t.Errorf("error %q does not name the target variable", err)
-	}
-}
-
 func TestVimBindingsAreOffUnlessAskedFor(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -194,21 +174,21 @@ func TestVimBindingsAreOffUnlessAskedFor(t *testing.T) {
 	}
 
 	settings, err = config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET": "w1:p3",
-		"HERDR_TRANS_VIM":    "1",
+		"TRANS_TARGET": "w1:p3",
+		"TRANS_VIM":    "1",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if !settings.Vim {
-		t.Error("Vim is false, want it enabled by HERDR_TRANS_VIM=1")
+		t.Error("Vim is false, want it enabled by TRANS_VIM=1")
 	}
 }
 
 func TestLivePreviewIsOnUnlessTurnedOff(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -217,21 +197,21 @@ func TestLivePreviewIsOnUnlessTurnedOff(t *testing.T) {
 	}
 
 	settings, err = config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET": "w1:p3",
-		"HERDR_TRANS_LIVE":   "0",
+		"TRANS_TARGET": "w1:p3",
+		"TRANS_LIVE":   "0",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if settings.Live {
-		t.Error("Live is true, want it turned off by HERDR_TRANS_LIVE=0")
+		t.Error("Live is true, want it turned off by TRANS_LIVE=0")
 	}
 }
 
 func TestKeepingDraftsIsOnUnlessTurnedOff(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -240,14 +220,14 @@ func TestKeepingDraftsIsOnUnlessTurnedOff(t *testing.T) {
 	}
 
 	settings, err = config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":     "w1:p3",
-		"HERDR_TRANS_KEEP_DRAFT": "0",
+		"TRANS_TARGET":     "w1:p3",
+		"TRANS_KEEP_DRAFT": "0",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if settings.KeepDraft {
-		t.Error("KeepDraft is true, want it turned off by HERDR_TRANS_KEEP_DRAFT=0")
+		t.Error("KeepDraft is true, want it turned off by TRANS_KEEP_DRAFT=0")
 	}
 }
 
@@ -255,21 +235,21 @@ func TestTheStateDirectoryIsPassedAlongForKeepingDrafts(t *testing.T) {
 	t.Parallel()
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":     "w1:p3",
-		"HERDR_PLUGIN_STATE_DIR": "/tmp/state",
+		"TRANS_TARGET":    "w1:p3",
+		"TRANS_STATE_DIR": "/tmp/state",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if settings.StateDir != "/tmp/state" {
-		t.Errorf("StateDir is %q, want the directory herdr set aside", settings.StateDir)
+		t.Errorf("StateDir is %q, want the configured directory", settings.StateDir)
 	}
 }
 
 func TestConfirmingBeforeSendingIsOffUnlessAskedFor(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -278,45 +258,45 @@ func TestConfirmingBeforeSendingIsOffUnlessAskedFor(t *testing.T) {
 	}
 
 	settings, err = config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":  "w1:p3",
-		"HERDR_TRANS_CONFIRM": "1",
+		"TRANS_TARGET":  "w1:p3",
+		"TRANS_CONFIRM": "1",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if !settings.Confirm {
-		t.Error("Confirm is false, want it enabled by HERDR_TRANS_CONFIRM=1")
+		t.Error("Confirm is false, want it enabled by TRANS_CONFIRM=1")
 	}
 }
 
-// Without the directory herdr sets aside, there is no plugin configuration to
-// read; reading .env from wherever the process happens to run would let a file
-// in a repository decide which binary gets executed.
+// Without a config directory, there is no configuration to read; reading .env
+// from wherever the process happens to run would let a file in a repository
+// decide which service gets used.
 func TestWithoutAConfigDirectoryNoDotEnvIsRead(t *testing.T) {
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, ".env"),
-		[]byte("HERDR_BIN_PATH=/tmp/planted\n"), 0o600); err != nil {
+		[]byte("TRANS_API_KEY=planted\n"), 0o600); err != nil {
 		t.Fatalf("writing the planted file: %v", err)
 	}
 	t.Chdir(directory)
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 
-	if settings.HerdrBinary != "herdr" {
-		t.Errorf("HerdrBinary is %q, want the planted file ignored", settings.HerdrBinary)
-	}
 	if settings.ConfigFile != "" {
 		t.Errorf("ConfigFile is %q, want none without a config directory", settings.ConfigFile)
+	}
+	if settings.Options.APIKey != "" {
+		t.Errorf("APIKey is %q, want the planted file ignored", settings.Options.APIKey)
 	}
 }
 
 func TestThePulseIsOnUnlessTurnedOff(t *testing.T) {
 	t.Parallel()
 
-	settings, err := config.Load(envFrom(map[string]string{"HERDR_TRANS_TARGET": "w1:p3"}))
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
@@ -325,33 +305,33 @@ func TestThePulseIsOnUnlessTurnedOff(t *testing.T) {
 	}
 
 	settings, err = config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET": "w1:p3",
-		"HERDR_TRANS_PULSE":  "0",
+		"TRANS_TARGET": "w1:p3",
+		"TRANS_PULSE":  "0",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)
 	}
 	if settings.Pulse {
-		t.Error("Pulse is true, want it turned off by HERDR_TRANS_PULSE=0")
+		t.Error("Pulse is true, want it turned off by TRANS_PULSE=0")
 	}
 }
 
-// A setting nobody can read is a setting nobody can trust: HERDR_TRANS_SUBMIT=flase
+// A setting nobody can read is a setting nobody can trust: TRANS_SUBMIT=flase
 // would otherwise send every prompt straight to the agent.
 func TestAValueThatIsNeitherOnNorOffIsRefused(t *testing.T) {
 	t.Parallel()
 
 	for _, variable := range []string{
-		"HERDR_TRANS_SUBMIT",
-		"HERDR_TRANS_VIM",
-		"HERDR_TRANS_LIVE",
-		"HERDR_TRANS_CONFIRM",
-		"HERDR_TRANS_KEEP_DRAFT",
-		"HERDR_TRANS_PULSE",
+		"TRANS_SUBMIT",
+		"TRANS_VIM",
+		"TRANS_LIVE",
+		"TRANS_CONFIRM",
+		"TRANS_KEEP_DRAFT",
+		"TRANS_PULSE",
 	} {
 		environment := map[string]string{
-			"HERDR_TRANS_TARGET": "w1:p1",
-			variable:             "flase",
+			"TRANS_TARGET": "w1:p1",
+			variable:       "flase",
 		}
 
 		_, err := config.Load(envFrom(environment))
@@ -369,10 +349,10 @@ func TestADraftLimitThatIsNotANumberIsRefused(t *testing.T) {
 	t.Parallel()
 
 	_, err := config.Load(envFrom(map[string]string{
-		"HERDR_TRANS_TARGET":    "w1:p1",
-		"HERDR_TRANS_MAX_DRAFT": "zweitausend",
+		"TRANS_TARGET":    "w1:p1",
+		"TRANS_MAX_DRAFT": "zweitausend",
 	}))
-	if err == nil || !strings.Contains(err.Error(), "HERDR_TRANS_MAX_DRAFT") {
+	if err == nil || !strings.Contains(err.Error(), "TRANS_MAX_DRAFT") {
 		t.Errorf("Load returned %v, want the unreadable draft limit refused by name", err)
 	}
 }

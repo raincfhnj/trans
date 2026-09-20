@@ -112,7 +112,7 @@ func TestAKeyAndACommandTogetherAreRefusedRatherThanGuessedAt(t *testing.T) {
 	if chosen.Trouble == nil {
 		t.Fatal("a key and a command together report no trouble")
 	}
-	if !strings.Contains(chosen.Trouble.Error(), "HERDR_TRANS_PROVIDER") {
+	if !strings.Contains(chosen.Trouble.Error(), "TRANS_PROVIDER") {
 		t.Errorf("the trouble is %v, want it to say which setting decides", chosen.Trouble)
 	}
 	if _, err := chosen.Translator.Translate(context.Background(), "Bitte behebe es"); err == nil {

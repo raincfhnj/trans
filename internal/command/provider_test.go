@@ -20,7 +20,7 @@ func TestAProviderWithNoCommandSaysWhichSettingIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("New returned no error with nothing to run")
 	}
-	if !strings.Contains(err.Error(), "HERDR_TRANS_COMMAND") {
+	if !strings.Contains(err.Error(), "TRANS_COMMAND") {
 		t.Errorf("New says %v, want it to name the setting that is missing", err)
 	}
 }

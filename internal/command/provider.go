@@ -12,7 +12,7 @@ func (Provider) Name() string { return "cmd" }
 
 func (Provider) New(options translation.Options) (translation.Translator, error) {
 	if options.Command == "" {
-		return nil, errors.New("no command to run: set HERDR_TRANS_COMMAND")
+		return nil, errors.New("no command to run: set TRANS_COMMAND")
 	}
 	return New(options.Command, WithTargetLanguage(options.TargetLanguage)), nil
 }

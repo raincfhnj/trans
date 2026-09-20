@@ -15,12 +15,12 @@ import (
 // A check against a real translator on this machine, kept behind a build tag so
 // the ordinary suite needs nothing installed:
 //
-//	HERDR_TRANS_COMMAND="/Applications/translateLocally.app/Contents/MacOS/translateLocally -m de-en-base" \
+//	TRANS_COMMAND="/Applications/translateLocally.app/Contents/MacOS/translateLocally -m de-en-base" \
 //	go test -tags live -run Live -v ./internal/command/
 func TestLiveTranslationThroughARealCommand(t *testing.T) {
-	commandLine := os.Getenv("HERDR_TRANS_COMMAND")
+	commandLine := os.Getenv("TRANS_COMMAND")
 	if commandLine == "" {
-		t.Skip("no HERDR_TRANS_COMMAND configured")
+		t.Skip("no TRANS_COMMAND configured")
 	}
 
 	translator := command.New(commandLine, command.WithTargetLanguage("EN-US"))

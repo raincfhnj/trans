@@ -91,7 +91,7 @@ func chosenName(settings *config.Settings, registry *translation.Registry) (stri
 	case hasKey && hasCommand:
 		return "", errors.New(
 			"there is both an API key and a command, so it is unclear which translates: " +
-				"choose one with HERDR_TRANS_PROVIDER")
+				"choose one with TRANS_PROVIDER")
 	case hasCommand:
 		return command.Provider{}.Name(), nil
 	case hasKey:

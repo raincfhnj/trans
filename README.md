@@ -1,6 +1,6 @@
 # trans
 
-[![Go](https://img.shields.io/github/go-mod/go-version/raincfhnj/trans)](go.mod)
+[![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
 [![herdr](https://img.shields.io/badge/herdr-%E2%89%A5%200.8.0-6C3EF5)](https://herdr.dev)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 

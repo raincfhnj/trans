@@ -141,7 +141,7 @@ TRANS_PROVIDER=gtranslate
 
 ## Local translation
 
-Point the plugin at a program instead of a service:
+Point the panel at a program instead of a service:
 
 ```bash
 TRANS_COMMAND=/path/to/translateLocally -m de-en-base

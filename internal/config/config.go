@@ -35,6 +35,11 @@ const (
 	configDirVar = "TRANS_CONFIG_DIR"
 	stateDirVar  = "TRANS_STATE_DIR"
 
+	historyVar      = "TRANS_HISTORY"
+	historyLimitVar = "TRANS_HISTORY_LIMIT"
+
+	defaultHistoryLimit = 500
+
 	defaultLanguage = "EN-US"
 	dotenvName      = ".env"
 )
@@ -60,6 +65,13 @@ type Settings struct {
 	PasteKeys string
 	// Hotkey is the key combination that opens the panel (Windows daemon).
 	Hotkey string
+
+	// History is whether the prompts already delivered are written down, so
+	// the panel can offer them again instead of them being retyped.
+	History bool
+	// HistoryLimit is how many delivered prompts are kept before the oldest
+	// ones are dropped.
+	HistoryLimit int
 }
 
 // The environment wins over the .env file, so a one-off invocation can
@@ -103,6 +115,10 @@ func Load(getenv func(string) string) (Settings, error) {
 		MaxDraft:   given.number(maxDraftVar),
 		PasteKeys:  lookup(pasteVar),
 		Hotkey:     lookup(hotkeyVar),
+
+		History:      given.flag(historyVar, true),
+		HistoryLimit: given.count(historyLimitVar, defaultHistoryLimit),
+
 		Options: translation.Options{
 			APIKey:         orDefault(lookup(scopedKeyVar(provider)), lookup(apiKeyVar)),
 			TargetLanguage: orDefault(lookup(languageVar), defaultLanguage),
@@ -151,6 +167,23 @@ func (r *reading) number(variable string) int {
 	if err != nil || number < 0 {
 		r.refuse(variable, value, "not a whole number of characters")
 		return 0
+	}
+	return number
+}
+
+// A count that cannot be read is not quietly taken as the default: a typo in
+// TRANS_HISTORY_LIMIT would otherwise silently change how much is kept.
+// Unlike a character count, zero here means nobody wants any.
+func (r *reading) count(variable string, whenUnset int) int {
+	value := strings.TrimSpace(r.lookup(variable))
+	if value == "" {
+		return whenUnset
+	}
+
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 1 {
+		r.refuse(variable, value, "not a positive whole number")
+		return whenUnset
 	}
 	return number
 }

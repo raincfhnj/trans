@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"trans/internal/history"
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
 
@@ -57,6 +58,9 @@ type Options struct {
 	// Drafts keeps an unfinished prompt between sessions. Without one the draft
 	// simply goes when the popup closes.
 	Drafts Drafts
+	// History is the record of prompts already delivered, which ctrl+g opens.
+	// Without one there is no record and no key for it.
+	History History
 	// SendKey is how the key that hands a prompt over is named in the footer. A
 	// terminal that keeps the chord for itself — Windows Terminal opens it full
 	// screen — has the panel name the other key that sends.
@@ -99,6 +103,15 @@ type Drafts interface {
 	Load() (string, error)
 	Save(text string) error
 	Clear() error
+}
+
+// History is the record of prompts that already reached the agent. It is
+// written on delivery and read back by ctrl+g, which is how a prompt sent last
+// week can be sent again instead of being remembered and retyped.
+type History interface {
+	Record(source, translation string, how promptflow.Delivery) error
+	Entries() ([]history.Entry, error)
+	Forget(entry *history.Entry) error
 }
 
 // errNoService is what the keys for translating say when there is nothing to
@@ -201,6 +214,12 @@ type Model struct {
 	reading bool
 	// readingFrom is the first row of the translation on screen while reading.
 	readingFrom int
+	// historyOpen puts the record of delivered prompts on screen instead of the
+	// draft, with the entry the arrows are on ready to be taken back.
+	historyOpen bool
+	historyList []history.Entry
+	historyAt   int
+	historyFrom int
 	// draftTop is the first row of the draft on screen, kept here because the text
 	// area does not say where its own view sits.
 	draftTop int
@@ -272,7 +291,9 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 }
 
 type (
-	promptSentMsg   struct{}
+	// translated is the text the agent received, kept so the prompt can be
+	// written down together with what was sent instead of written in twice.
+	promptSentMsg   struct{ translated string }
 	blankDraftMsg   struct{}
 	submitFailedMsg struct{ err error }
 	hintMsg         struct{ what string }
@@ -345,6 +366,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case promptSentMsg:
 		m.delivered = true
+		// The record is written before the box empties, because the box is what
+		// the prompt was written in.
+		m.recordDelivery(msg.translated)
 		m.forgetDraft()
 		// Neither way of delivering closes the panel: a sent prompt and one that
 		// was only typed into the agent's input both leave the box empty and
@@ -550,6 +574,11 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Type == tea.KeyCtrlC:
 		return m, tea.Quit
 
+	// The record of delivered prompts answers to its own keys while it is open,
+	// and ctrl+g opens it from wherever the panel is.
+	case m.historyOpen || key.Type == tea.KeyCtrlG:
+		return m.historyKey(key)
+
 	// Tab flips between writing and reading the translation.
 	case key.Type == tea.KeyTab:
 		return m.flipReading(), nil
@@ -713,7 +742,7 @@ func (m Model) deliverPreview() (tea.Model, tea.Cmd) {
 		if err := m.prompter.Deliver(m.ctx, prompt, m.delivery); err != nil {
 			return submitFailedMsg{err: err}
 		}
-		return promptSentMsg{}
+		return promptSentMsg{translated: prompt}
 	})
 }
 
@@ -752,18 +781,19 @@ func (m Model) startSubmit() (tea.Model, tea.Cmd) {
 			if err := m.prompter.Deliver(m.ctx, preview, m.delivery); err != nil {
 				return submitFailedMsg{err: err}
 			}
-			return promptSentMsg{}
+			return promptSentMsg{translated: preview}
 		})
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		switch _, err := m.prompter.Submit(m.ctx, draft, m.delivery); {
+		translated, err := m.prompter.Submit(m.ctx, draft, m.delivery)
+		switch {
 		case errors.Is(err, promptflow.ErrBlankDraft):
 			return blankDraftMsg{}
 		case err != nil:
 			return submitFailedMsg{err: err}
 		default:
-			return promptSentMsg{}
+			return promptSentMsg{translated: translated}
 		}
 	})
 }

@@ -20,6 +20,7 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 - **Vim bindings** — modal editing for the draft box
 - **Draft persistence** — your unfinished prompt is kept between sessions
 - **Code protection** — backticked spans and fenced blocks are not translated
+- **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
 
 ## Quick start
 
@@ -103,6 +104,7 @@ TRANS_HOTKEY=ctrl+shift+t trans-windowd
 | `ctrl+l` | Toggle live translation |
 | `ctrl+t` | Translate now / retry after error |
 | `tab` | Read the full translation / back to draft |
+| `ctrl+g` | Show the prompts already sent |
 | `ctrl+u` | Discard draft |
 | `esc` | Close (from normal mode if vim is on) |
 | `ctrl+c` | Close always |
@@ -129,6 +131,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_PULSE` | `1` | `0` stops the live circle animation |
 | `TRANS_LOGO` | `1` | `0` hides the draft box signature |
 | `TRANS_HOTKEY` | `ctrl+alt+t` | Hotkey for the daemon |
+| `TRANS_HISTORY` | `1` | `0` keeps no record of sent prompts |
+| `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
 
 ### Services that need no key
 
@@ -150,6 +154,17 @@ TRANS_COMMAND=/path/to/translateLocally -m de-en-base
 The draft is written to stdin, the translation read from stdout. No key, no network.
 
 See [docs/local-translation.md](docs/local-translation.md) for details.
+
+## Sent-prompt history
+
+Every prompt that reached the agent is written down — what you wrote, what was
+sent, which window it went into — and `ctrl+g` opens the record, newest first.
+`enter` puts the selected prompt back into the box exactly as it was written,
+`delete` drops one, `esc` closes. The record holds `TRANS_HISTORY_LIMIT`
+prompts (500 by default), drops the oldest beyond that, and stays on your
+machine in the state directory, written as privately as the drafts.
+
+See [docs/history.md](docs/history.md) for the details.
 
 ## What leaves your machine
 

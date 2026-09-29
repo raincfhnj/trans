@@ -25,6 +25,7 @@ import (
 
 	"trans/internal/config"
 	"trans/internal/draft"
+	"trans/internal/history"
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
 	"trans/internal/service"
@@ -245,7 +246,8 @@ func runPanel() error {
 			SendKey: "ctrl+d",
 			Cursor:  cursor,
 
-			Drafts: drafts(&settings, window.Title),
+			Drafts:  drafts(&settings, window.Title),
+			History: historyLog(&settings, window.Title),
 		}),
 		programOptions...,
 	)
@@ -383,13 +385,27 @@ func drafts(settings *config.Settings, title string) overlay.Drafts {
 	if !settings.KeepDraft || settings.StateDir == "" {
 		return nil
 	}
-	// A handle is different every time a terminal starts; its title is what the
-	// author would recognize as the pane they were writing in.
-	key := title
-	if strings.TrimSpace(key) == "" {
-		key = settings.Target
+	return draft.NewStore(settings.StateDir).For(windowKey(settings, title))
+}
+
+// historyLog is the record of prompts this panel delivers. Every window writes
+// into the same file, each entry saying which window it was delivered into.
+func historyLog(settings *config.Settings, title string) overlay.History {
+	if !settings.History || settings.StateDir == "" {
+		return nil
 	}
-	return draft.NewStore(settings.StateDir).For(key)
+	return history.NewStore(settings.StateDir, settings.HistoryLimit).
+		For(windowKey(settings, title))
+}
+
+// windowKey is how a window is named in the panel's own files. A handle is
+// different every time a terminal starts; its title is what the author would
+// recognize as the pane they were writing in.
+func windowKey(settings *config.Settings, title string) string {
+	if strings.TrimSpace(title) == "" {
+		return settings.Target
+	}
+	return title
 }
 
 func boolSetting(value bool) string {

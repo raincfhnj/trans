@@ -328,6 +328,7 @@ func TestAValueThatIsNeitherOnNorOffIsRefused(t *testing.T) {
 		"TRANS_CONFIRM",
 		"TRANS_KEEP_DRAFT",
 		"TRANS_PULSE",
+		"TRANS_HISTORY",
 	} {
 		environment := map[string]string{
 			"TRANS_TARGET": "w1:p1",
@@ -354,5 +355,51 @@ func TestADraftLimitThatIsNotANumberIsRefused(t *testing.T) {
 	}))
 	if err == nil || !strings.Contains(err.Error(), "TRANS_MAX_DRAFT") {
 		t.Errorf("Load returned %v, want the unreadable draft limit refused by name", err)
+	}
+}
+
+// The record of prompts already delivered is written unless it is turned off,
+// and how much of it is kept is a number the setting has to make sense of.
+func TestTheRecordOfDeliveredPromptsIsKeptUnlessTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p1"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if !settings.History {
+		t.Error("History is false, want the record kept by default")
+	}
+	if settings.HistoryLimit != 500 {
+		t.Errorf("HistoryLimit is %d, want 500 by default", settings.HistoryLimit)
+	}
+
+	off, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":        "w1:p1",
+		"TRANS_HISTORY":       "0",
+		"TRANS_HISTORY_LIMIT": "7",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if off.History {
+		t.Error("History is true, want it turned off by TRANS_HISTORY=0")
+	}
+	if off.HistoryLimit != 7 {
+		t.Errorf("HistoryLimit is %d, want 7 from TRANS_HISTORY_LIMIT", off.HistoryLimit)
+	}
+}
+
+func TestAnUnreadableLimitIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"0", "viele"} {
+		_, err := config.Load(envFrom(map[string]string{
+			"TRANS_TARGET":        "w1:p1",
+			"TRANS_HISTORY_LIMIT": value,
+		}))
+		if err == nil || !strings.Contains(err.Error(), "TRANS_HISTORY_LIMIT") {
+			t.Errorf("TRANS_HISTORY_LIMIT=%s failed with %v, want the variable named", value, err)
+		}
 	}
 }

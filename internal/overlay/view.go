@@ -12,6 +12,10 @@ import (
 )
 
 func (m Model) View() string {
+	if m.historyOpen {
+		m.reportCursor(0, false)
+		return m.historyView()
+	}
 	if m.reading {
 		m.reportCursor(0, false)
 		return m.readingView()
@@ -265,6 +269,11 @@ func (m Model) keyHints(room int) string {
 			[2]string{"ctrl+l", "live"})
 	} else {
 		shown = append(shown, [2]string{"ctrl+r", "→ " + m.otherDestination()})
+	}
+
+	// The record of prompts already sent is only a key while there is one.
+	if m.options.History != nil {
+		shown = append(shown, [2]string{"ctrl+g", "history"})
 	}
 
 	// An arrow reads as "takes you to", which a bare mode name does not.

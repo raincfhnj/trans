@@ -2,6 +2,7 @@
 
 [![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ci](https://github.com/raincfhnj/trans/actions/workflows/ci.yml/badge.svg)](https://github.com/raincfhnj/trans/actions/workflows/ci.yml)
 
 Write prompts in the language you think in and get them translated to English for your coding agent. A native Windows translation panel that opens over your terminal window.
 

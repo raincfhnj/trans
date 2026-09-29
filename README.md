@@ -14,6 +14,8 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 ## Features
 
 - **Native Windows panel** — opens over your terminal window, no extra software needed
+- **Selection translation** — select text in the terminal, press a chord, read the translation beside it
+- **Settings window** — service, key, panel behaviour and chords, edited in a window summoned the same way
 - **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API
 - **No key required** — free services work without any API key
 - **Live translation** — see the English as you write
@@ -74,6 +76,12 @@ trans-window open --review
 # Open over a specific window
 trans-window open --target 0x1a2b3c
 
+# Translate what is selected in the window in front
+trans-window select
+
+# Edit the settings in a window of their own
+trans-window settings
+
 # List available windows
 trans-window list-windows
 
@@ -81,19 +89,49 @@ trans-window list-windows
 trans-window translate "Hallo Welt"
 ```
 
+### Selection translation
+
+Press the selection chord (`ctrl+alt+s` by default) with text selected in the
+pane in front. The selection is read through the clipboard — as it stands by
+default, copied out of the pane first when `TRANS_SELECT_COPY` says which chord
+copies — and a window opens over the pane with the selection and its
+translation together. Nothing is delivered: the text stays where it was
+selected.
+
+Where the terminal copies on a chord of its own, say which one:
+
+```
+TRANS_SELECT_COPY=ctrl+shift+c
+```
+
+The selection is then copied with that chord — clipboard saved, marked, chord
+pressed, read, clipboard put back — instead of read as it stands. A selection
+longer than 4000 characters is cut before it is sent.
+
 ### Windows daemon
 
-`trans-windowd` waits for a hotkey and opens the panel:
+`trans-windowd` waits for three chords and opens whichever window they name:
+
+| Chord | Default | Opens |
+| --- | --- | --- |
+| `TRANS_HOTKEY` | `ctrl+alt+t` | The panel |
+| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | The selection window |
+| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | The settings window |
 
 ```bash
-# Start the daemon (default hotkey: ctrl+alt+t)
-trans-windowd
-
-# Use a custom hotkey
+# Start the daemon with a panel chord of your own
 TRANS_HOTKEY=ctrl+shift+t trans-windowd
 ```
 
+Each chord is claimed when the daemon starts, so one changed in the settings
+window takes effect the next time it starts — the window says so when you save
+one. Set a chord to `off` to leave it unclaimed. On layouts where `ctrl+alt`
+types a character (AltGr on many of them), move the chords to `ctrl+shift`
+before starting.
+
 ## Key bindings
+
+### Panel
 
 | Key | Action |
 | --- | --- |
@@ -105,6 +143,27 @@ TRANS_HOTKEY=ctrl+shift+t trans-windowd
 | `tab` | Read the full translation / back to draft |
 | `ctrl+u` | Discard draft |
 | `esc` | Close (from normal mode if vim is on) |
+| `ctrl+c` | Close always |
+
+### Selection window
+
+| Key | Action |
+| --- | --- |
+| `esc`, `ctrl+c` | Close |
+| `ctrl+t` | Try the translation again after an error |
+| `↑` `↓`, `k` `j` | Read the translation line by line |
+| `pgup` `pgdn`, `space` | Read a page at a time |
+| `g` `G`, `home` `end` | Jump to the start / the end |
+
+### Settings window
+
+| Key | Action |
+| --- | --- |
+| `↑` `↓`, `k` `j` | Move between settings |
+| `←` `→` | Step a service or throw a flag |
+| `enter` | Write a value in; the next service; a flag |
+| `s`, `ctrl+s` | Save what changed |
+| `esc` | Close — twice when something changed |
 | `ctrl+c` | Close always |
 
 ## Settings
@@ -128,7 +187,24 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_MAX_DRAFT` | `2000` | Characters before warning |
 | `TRANS_PULSE` | `1` | `0` stops the live circle animation |
 | `TRANS_LOGO` | `1` | `0` hides the draft box signature |
-| `TRANS_HOTKEY` | `ctrl+alt+t` | Hotkey for the daemon |
+| `TRANS_HOTKEY` | `ctrl+alt+t` | Chord that opens the panel (`off` opens nothing) |
+| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | Chord that opens the selection window |
+| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | Chord that opens the settings window |
+| `TRANS_SELECT_COPY` | none | Chord pressed to copy the selection; without one the clipboard is read as it stands |
+
+### The settings window
+
+`trans-window settings` — or the settings chord — opens every one of these
+over the pane in front:
+
+- Values are changed with `←` `→` or written in with `enter`, and `s` saves.
+- What is saved goes into the `.env` in the config directory; every other line
+  stays as it stands.
+- A variable set in the environment wins over the file, so those rows carry an
+  `env` mark: saving them does not change what they answer until it is taken
+  out of the environment.
+- Saving one of the three chords says to restart `trans-windowd`.
+- The API key is shown as dots and never written out in the window.
 
 ### Services that need no key
 

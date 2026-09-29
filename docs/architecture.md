@@ -1,15 +1,27 @@
 # How it works
 
-The daemon, `trans-windowd`, waits for the hotkey and opens the draft box as a
-floating popup over the window in front, passing the target window handle along
-in the environment, so the prompt lands where it was written.
+The daemon, `trans-windowd`, waits for three chords and hands off to
+`trans-window select`, `trans-window open` or `trans-window settings`
+according to which one was pressed. Each of them opens a floating popup over
+the window in front, passing the target window handle along in the environment,
+so everything lands where the key was pressed.
 `trans-window open` is the same opening from a command line, with `--target` to
 name another window.
 
-On `alt+enter` the draft goes to a translation service and the result is handed
-back to the same window through `wintarget`: the text is put on the clipboard,
-the window is brought forward and pasted into, and return is pressed to send
-it. The review action stops before the return, leaving that keystroke to you.
+The panel is the draft box: on `alt+enter` the draft goes to a translation
+service and the result is handed back to the same window through `wintarget`:
+the text is put on the clipboard, the window is brought forward and pasted
+into, and return is pressed to send it. The review action stops before the
+return, leaving that keystroke to you.
+
+The selection window only reads. The process the chord woke takes the
+selection out of the pane — the clipboard read as it stands by default, and
+with `TRANS_SELECT_COPY` set the clipboard saved, the pane asked to copy, the
+result read and the clipboard put back — and passes the text to its window in
+the environment; there the service is asked and the answer is drawn beside the
+selection. The settings window writes: it changes the rows it
+is asked to change and rewrites the `.env` in place, leaving every other line
+alone. Neither of them delivers anything.
 
 ## The pieces
 
@@ -20,16 +32,20 @@ it. The review action stops before the return, leaving that keystroke to you.
 | `deepl`, `google`, `gtranslate`, `openai`, `mymemory`, `command` | Services behind those ports: three hosts, one API any host can speak, and one program on the machine. |
 | `service` | Which of them a draft goes through, and what to say when it cannot be built. The panel and `trans-window translate` both ask it, so neither answers the question on its own. |
 | `overlay` | The *Bubble Tea* program: the draft box, the header and footer, the keys. |
+| `selection` | The window that draws a selection and its translation together. It translates and scrolls; it never delivers. |
+| `settings` | The window that edits the settings: one row each for the service, its options, the panel's behaviour and the three chords, saved through `config.Save`. |
+| `frame` | What the two small windows share: the palette, the boxes with their labels, and the scroll bar. |
 | `vimarea` | A text area with modal editing, used by the overlay. |
-| `config` | Settings from the environment and the `.env` in the config directory. |
+| `config` | Settings from the environment and the `.env` in the config directory — read by `Load`, prepared and kept by `Prepare`, and rewritten line by line by `Save`. |
 | `draft` | An unfinished prompt on disk, one file per window, written privately and atomically. |
-| `win32`, `wintarget`, `winlog` | The same panel on Windows: the window it opens over, the paste that delivers the prompt into it, and the log a program without a console has to write to. |
+| `win32`, `wintarget`, `winlog` | The same windows on Windows: the chords the daemon claims, the selection read out of the pane, the window each popup opens over, the paste that delivers a prompt into it, and the log a program without a console has to write to. |
 
-`cmd/trans-window` is the composition root: it reads the settings, asks
-`service` for the one that was chosen, wires the flow to its targets and starts
-the program. `cmd/trans-windowd` is the daemon beside it, claiming the hotkey
-and handing off to `trans-window open`. Nothing below them knows which service
-is in use or how the popup was opened.
+`cmd/trans-window` is the composition root for all three windows: it reads the
+settings, asks `service` for the one that was chosen, wires the flow to its
+targets and starts the program named by `TRANS_PANEL_MODE` — the panel, the
+selection, or the settings. `cmd/trans-windowd` is the daemon beside it,
+claiming the three chords and handing off to the subcommand each one names.
+Nothing below them knows which service is in use or how the popup was opened.
 
 `promptflow` owns the ports it needs — `Translator`, `Target`, `UsageReporter` —
 and imports no adapter package, not even `translation`. Where the two
@@ -96,5 +112,6 @@ make build
 ```
 
 Tests are written from the outside in and named as sentences about behaviour.
-The overlay is driven through `teatest`, which means its tests type keys and
-read frames rather than reaching into the model.
+The overlay, the selection window and the settings window are driven through
+`teatest`, which means their tests type keys and read frames rather than
+reaching into the model.

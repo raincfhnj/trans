@@ -398,26 +398,28 @@ func commandLineFor(program string, arguments []string) string {
 	return strings.Join(parts, " ")
 }
 
-// RegisterHotkey claims a key combination for this program, so the panel can be
-// opened from wherever the author is working.
-func RegisterHotkey(modifiers, key uint32) error {
-	if call(procRegisterHotKey, 0, 1, uintptr(modifiers|modNoRepeat), uintptr(key)) == 0 {
+// RegisterHotkey claims a key combination for this program under an id, so one
+// daemon can wait for the panel's chord, the selection's and the settings
+// window's at the same time and say which was pressed. The id travels with the
+// key press and no id is claimed twice.
+func RegisterHotkey(id uint32, modifiers, key uint32) error {
+	if call(procRegisterHotKey, 0, uintptr(id), uintptr(modifiers|modNoRepeat), uintptr(key)) == 0 {
 		return lastError("RegisterHotKey")
 	}
 	return nil
 }
 
-// WaitForHotkey blocks until the hotkey is pressed and answers false when the
-// program is being shut down.
-func WaitForHotkey() bool {
+// WaitForHotkey blocks until a claimed hotkey is pressed and answers with the
+// id it was registered under, or 0 when the program is being shut down.
+func WaitForHotkey() uint32 {
 	message := message{}
 	for {
 		result := call(procGetMessageW, uintptr(unsafe.Pointer(&message)), 0, 0, 0)
 		switch {
 		case result == 0, result == ^uintptr(0):
-			return false
+			return 0
 		case message.Message == wmHotkey:
-			return true
+			return uint32(message.WParam)
 		}
 	}
 }

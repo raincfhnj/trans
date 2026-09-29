@@ -7,6 +7,9 @@
 //	trans-window open            opens the panel over the window in front
 //	trans-window open --review   the same, but only types the prompt in
 //	trans-window open --target 0x1a2b3c | "Windows Terminal"
+//	trans-window select          reads the selection in the pane in front and
+//	                              opens the window that translates it
+//	trans-window settings        opens the window that edits the settings
 //	trans-window list-windows    what can be opened over, with the handles
 //	trans-window translate TEXT  asks the configured service, without a panel
 package main
@@ -18,7 +21,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +29,9 @@ import (
 	"trans/internal/draft"
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
+	"trans/internal/selection"
 	"trans/internal/service"
+	"trans/internal/settings"
 	"trans/internal/translation"
 	"trans/internal/win32"
 	"trans/internal/winlog"
@@ -43,6 +47,10 @@ func main() {
 		switch os.Args[1] {
 		case "open":
 			exit(runOpen(os.Args[2:]))
+		case "select":
+			exit(runSelect(os.Args[2:]))
+		case "settings":
+			exit(runSettings(os.Args[2:]))
 		case "list-windows":
 			listWindows()
 		case "translate":
@@ -93,24 +101,35 @@ func runOpen(arguments []string) error {
 			return fmt.Errorf("unknown argument %q", arguments[index])
 		}
 	}
-	if setting == "" {
+	return openOver("", setting, probe, overlay.PopupWidth, overlay.PopupHeight(),
+		"TRANS_SUBMIT="+boolSetting(submit))
+}
+
+// popupWindow is the window a popup belongs over: the one named in the
+// setting, and — when nothing is named — the one in front, which is the pane
+// the chord was pressed in.
+func popupWindow(setting string) (win32.Window, error) {
+	if strings.TrimSpace(setting) == "" {
 		setting = os.Getenv("TRANS_TARGET")
 	}
-
-	var window win32.Window
-	var err error
 	if strings.TrimSpace(setting) != "" {
-		window, err = win32.Resolve(win32.ParseTarget(setting))
-	} else {
-		window = win32.Foreground()
-		if window.Handle == 0 {
-			err = errors.New("no window in front to open the panel over")
-		}
+		return win32.Resolve(win32.ParseTarget(setting))
 	}
+	window := win32.Foreground()
+	if window.Handle == 0 {
+		return win32.Window{}, errors.New("no window in front to open the panel over")
+	}
+	return window, nil
+}
+
+// openOver opens one of the windows over a pane. The mode says which one the
+// child draws — empty means the panel itself — the size is the room it is
+// given to draw it in, and the extra settings ride along in the environment.
+func openOver(mode, setting, probe string, width, height int, extra ...string) error {
+	window, err := popupWindow(setting)
 	if err != nil {
 		return err
 	}
-
 	program, err := os.Executable()
 	if err != nil {
 		return err
@@ -119,11 +138,14 @@ func runOpen(arguments []string) error {
 	environment := append(os.Environ(),
 		fmt.Sprintf("TRANS_TARGET=%#x", window.Handle),
 		"TRANS_TARGET_TITLE="+window.Title,
-		"TRANS_SUBMIT="+boolSetting(submit),
 	)
+	if mode != "" {
+		environment = append(environment, "TRANS_PANEL_MODE="+mode)
+	}
 	if probe != "" {
 		environment = append(environment, "TRANS_PROBE_MS="+probe)
 	}
+	environment = append(environment, extra...)
 
 	// Windows Terminal places a window better than a console window places
 	// itself: it knows its own font and is already where the screen is, and the
@@ -134,7 +156,7 @@ func runOpen(arguments []string) error {
 		return win32.SpawnQuietly(terminal, []string{
 			"-w", "-1",
 			"--pos", fmt.Sprintf("%d,%d", left+panelMargin, top+panelMargin),
-			"--size", fmt.Sprintf("%d,%d", overlay.PopupWidth, overlay.PopupHeight()),
+			"--size", fmt.Sprintf("%d,%d", width, height),
 			"new-tab", "--title", win32.PanelTitle,
 			program,
 		}, environment)
@@ -142,54 +164,107 @@ func runOpen(arguments []string) error {
 	return win32.Spawn(program, nil, environment)
 }
 
+// runSelect reads what is selected in the pane in front and opens the window
+// that translates it. The reading happens here, in the process the chord woke:
+// the clipboard is only right for as long as nobody disturbs it, so the text
+// travels on to the window rather than being read there again.
+func runSelect(arguments []string) error {
+	if len(arguments) > 0 {
+		return errors.New("select does not take arguments")
+	}
+	config.Prepare()
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+
+	selected, readErr := win32.SelectedText(cfg.SelectCopy)
+	// A selection longer than the service would take is cut to what it would;
+	// the window draws its source as far as the box goes anyway.
+	if runes := []rune(selected); len(runes) > selectionLimit {
+		selected = string(runes[:selectionLimit]) + "…"
+	}
+
+	extra := []string{"TRANS_SELECTION=" + selected}
+	if readErr != nil {
+		extra = append(extra, "TRANS_SELECTION_ERROR="+readErr.Error())
+	}
+	return openOver("select", "", "", selection.PopupWidth, selection.PopupHeight(), extra...)
+}
+
+// selectionLimit is the longest selection carried on to be translated: long
+// enough for a paragraph and its neighbours, short enough that the window and
+// the service are both asked something they can answer.
+const selectionLimit = 4000
+
+// runSettings opens the window that edits this plugin's settings. Nothing is
+// read for it first: the window opens on the settings as they are and writes
+// them back through the file itself.
+func runSettings(arguments []string) error {
+	if len(arguments) > 0 {
+		return errors.New("settings does not take arguments")
+	}
+	config.Prepare()
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+	options := windowSettings(cfg)
+	return openOver("settings", "", "", settings.PopupWidth, settings.PopupHeight(options))
+}
+
 // panelMargin keeps the panel off the very edge of the window it opens over.
 const panelMargin = 48
 
-// runPanel is the program the popup runs: it puts its own console over the pane
-// and hands the draft box the window as its way out.
+// runPanel is the program every popup runs: it puts its own console over the
+// pane and hands whichever window it is to the mode in the environment.
 func runPanel() error {
-	defaultDirectories()
+	config.Prepare()
 
 	// The window drawing this process is found by the name of its console: with a
 	// terminal program as the default host, that is the only handle on it there is.
 	win32.NameConsole(win32.PanelTitle)
 
-	settings, err := config.Load(os.Getenv)
+	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		winlog.Note("panel", "settings: %v", err)
 		return err
 	}
-	window, err := win32.Resolve(win32.ParseTarget(settings.Target))
+
+	// The selection and the settings are drawn by the same program as the
+	// panel; what they do not have is its draft box and its sending.
+	if mode := os.Getenv("TRANS_PANEL_MODE"); mode == "select" || mode == "settings" {
+		window, resolveErr := win32.Resolve(win32.ParseTarget(cfg.Target))
+		if resolveErr != nil {
+			// These windows only put something on the screen: opening them
+			// where they can beats not opening at all because the pane in
+			// front could not be found.
+			winlog.Note("panel", "target %q: %v", cfg.Target, resolveErr)
+			window = win32.Window{}
+		}
+		if mode == "select" {
+			return selectionWindow(window, cfg)
+		}
+		return settingsWindow(window, cfg)
+	}
+
+	window, err := win32.Resolve(win32.ParseTarget(cfg.Target))
 	if err != nil {
-		winlog.Note("panel", "target %q: %v", settings.Target, err)
+		winlog.Note("panel", "target %q: %v", cfg.Target, err)
 		return err
 	}
 
-	chosen := service.Choose(&settings)
+	chosen := service.Choose(&cfg)
 	translator := chosen.Translator
 
-	pasteKeys := settings.PasteKeys
+	pasteKeys := cfg.PasteKeys
 	if pasteKeys == "" {
 		pasteKeys = win32.DefaultPasteChord()
 	}
 
 	winlog.Note("panel", "opening over %#x %q, service %s, paste %s",
 		window.Handle, window.Title, chosen.Name, pasteKeys)
-	if err := win32.OpenOver(win32.PopupOptions{
-		Over:   window.Handle,
-		Width:  overlay.PopupWidth,
-		Height: overlay.PopupHeight(),
-	}); err != nil {
-		// Not being able to place the window is not a reason to leave: the overlay
-		// draws into whatever console this process has, and a panel somewhere
-		// beats no panel at all.
-		winlog.Note("panel", "the window could not be placed: %v", err)
-	}
-	targetLeft, targetTop, targetRight, targetBottom := win32.WindowRectOf(window.Handle)
-	left, top, right, bottom := win32.WindowRectOf(win32.HostWindow(win32.PanelTitle))
-	width, height := win32.ScreenSize()
-	winlog.Note("panel", "target %d,%d-%d,%d window %d,%d-%d,%d screen %dx%d",
-		targetLeft, targetTop, targetRight, targetBottom, left, top, right, bottom, width, height)
+	placeOver(window, overlay.PopupWidth, overlay.PopupHeight())
 
 	flowOptions := []promptflow.Option{
 		// Writing means translating the same draft again and again, so a preview
@@ -232,20 +307,20 @@ func runPanel() error {
 			Service:        chosen.Name,
 			WithoutService: !chosen.Translates,
 			Trouble:        chosen.Trouble,
-			Language:       settings.Options.TargetLanguage,
-			Review:         !settings.Submit,
-			Vim:            settings.Vim,
-			Live:           settings.Live,
-			Confirm:        settings.Confirm,
-			Pulse:          settings.Pulse,
-			Logo:           settings.Logo,
-			MaxDraft:       settings.MaxDraft,
+			Language:       cfg.Options.TargetLanguage,
+			Review:         !cfg.Submit,
+			Vim:            cfg.Vim,
+			Live:           cfg.Live,
+			Confirm:        cfg.Confirm,
+			Pulse:          cfg.Pulse,
+			Logo:           cfg.Logo,
+			MaxDraft:       cfg.MaxDraft,
 			// Windows Terminal opens alt+enter full screen, so the panel says the key
 			// that does send: ctrl+d.
 			SendKey: "ctrl+d",
 			Cursor:  cursor,
 
-			Drafts: drafts(&settings, window.Title),
+			Drafts: drafts(&cfg, window.Title),
 		}),
 		programOptions...,
 	)
@@ -271,6 +346,94 @@ func runPanel() error {
 	// A window that was closed ends the program this way; it is not a failure.
 	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return fmt.Errorf("running the panel: %w", err)
+	}
+	return nil
+}
+
+// placeOver puts the console over the window the popup belongs on and says
+// where everything landed. Not being able to place it is not a reason to
+// leave: the window draws into whatever console this process has, and a panel
+// somewhere beats no panel at all, so this only ever reports.
+func placeOver(window win32.Window, width, height int) {
+	if err := win32.OpenOver(win32.PopupOptions{
+		Over:   window.Handle,
+		Width:  width,
+		Height: height,
+	}); err != nil {
+		winlog.Note("panel", "the window could not be placed: %v", err)
+	}
+	targetLeft, targetTop, targetRight, targetBottom := win32.WindowRectOf(window.Handle)
+	left, top, right, bottom := win32.WindowRectOf(win32.HostWindow(win32.PanelTitle))
+	screenWidth, screenHeight := win32.ScreenSize()
+	winlog.Note("panel", "target %d,%d-%d,%d window %d,%d-%d,%d screen %dx%d",
+		targetLeft, targetTop, targetRight, targetBottom, left, top, right, bottom,
+		screenWidth, screenHeight)
+}
+
+// selectionWindow draws the selection and its translation. The text was read
+// by the process the chord woke and arrives through the environment, so what
+// is left here is the service to ask and the window to ask it in.
+func selectionWindow(window win32.Window, cfg config.Settings) error {
+	placeOver(window, selection.PopupWidth, selection.PopupHeight())
+
+	chosen := service.Choose(&cfg)
+	trouble := chosen.Trouble
+	// The selection did not come to hand: that is what the window has to say,
+	// rather than the state of a service that was never reached.
+	if read := os.Getenv("TRANS_SELECTION_ERROR"); read != "" {
+		trouble = errors.New("reading the selection: " + read)
+	}
+
+	ctx, stopListening := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopListening()
+
+	// Protecting keeps the selection's own code out of the request: what was
+	// selected is often code, and it is not prose to be translated.
+	return runSmall(ctx, selection.New(ctx, translation.Protecting(chosen.Translator),
+		selection.Options{
+			Service:        chosen.Name,
+			Language:       cfg.Options.TargetLanguage,
+			Source:         os.Getenv("TRANS_SELECTION"),
+			SelectCopy:     cfg.SelectCopy,
+			Trouble:        trouble,
+			WithoutService: !chosen.Translates,
+		}))
+}
+
+// settingsWindow draws the settings over the pane they were called up in.
+// There is no service to ask and nothing to send: the window reads what the
+// settings are and writes the file they live in.
+func settingsWindow(window win32.Window, cfg config.Settings) error {
+	options := windowSettings(cfg)
+	placeOver(window, settings.PopupWidth, settings.PopupHeight(options))
+
+	ctx, stopListening := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stopListening()
+	return runSmall(ctx, settings.New(options))
+}
+
+// windowSettings is what the settings window opens on: these settings as they
+// are read in this process, every service the registry knows to step through,
+// and the real key parsing for the chords it would write.
+func windowSettings(cfg config.Settings) settings.Options {
+	return settings.Options{
+		Settings: cfg,
+		Getenv:   os.Getenv,
+		Services: service.Registry().Names(),
+		Chord: func(spec string) error {
+			_, _, err := win32.Keys(spec)
+			return err
+		},
+	}
+}
+
+// runSmall is the way the two small windows are shown: the console they open
+// in is the whole of them, and one closed by hand is the window ending, not a
+// failure.
+func runSmall(ctx context.Context, model tea.Model) error {
+	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen())
+	if _, err := program.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+		return fmt.Errorf("running the window: %w", err)
 	}
 	return nil
 }
@@ -310,18 +473,18 @@ func translate(arguments []string) error {
 	if len(arguments) == 0 {
 		return errors.New("translate needs the text to translate")
 	}
-	defaultDirectories()
+	config.Prepare()
 	// Nothing is delivered here, so there is no pane to name; the setting is only
 	// what a panel would need.
 	if os.Getenv("TRANS_TARGET") == "" {
 		_ = os.Setenv("TRANS_TARGET", "none")
 	}
 
-	settings, err := config.Load(os.Getenv)
+	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
 	}
-	chosen := service.Choose(&settings)
+	chosen := service.Choose(&cfg)
 	// The command line carries the text the way the panel does — code and all —
 	// so it goes out through the same protection: a fenced or backticked span is
 	// kept out of the request rather than sent to the service as prose.
@@ -334,66 +497,17 @@ func translate(arguments []string) error {
 	return nil
 }
 
-// defaultDirectories gives the panel the directories for settings and drafts.
-func defaultDirectories() {
-	if os.Getenv("TRANS_CONFIG_DIR") == "" {
-		if directory, err := os.UserConfigDir(); err == nil {
-			_ = os.Setenv("TRANS_CONFIG_DIR", filepath.Join(directory, "trans"))
-		}
-	}
-	if os.Getenv("TRANS_STATE_DIR") == "" {
-		if directory, err := os.UserCacheDir(); err == nil {
-			state := filepath.Join(directory, "trans", "state")
-			_ = os.MkdirAll(state, 0o700)
-			_ = os.Setenv("TRANS_STATE_DIR", state)
-		}
-	}
-	writeStarterEnv()
-}
-
-// A directory with nothing in it is not much of a start, since the settings are
-// files rather than a screen of options.
-func writeStarterEnv() {
-	directory := os.Getenv("TRANS_CONFIG_DIR")
-	if directory == "" {
-		return
-	}
-	file := filepath.Join(directory, ".env")
-	if _, err := os.Stat(file); err == nil {
-		return
-	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return
-	}
-	starter := "" +
-		"# Settings for trans. A line here is a setting; an environment\n" +
-		"# variable of the same name wins over it.\n" +
-		"#\n" +
-		"# Without a key, the free service needs no account at all:\n" +
-		"#   TRANS_PROVIDER=gtranslate\n" +
-		"#\n" +
-		"# A key means DeepL, and free keys end in :fx:\n" +
-		"#   TRANS_API_KEY=your-key\n" +
-		"#\n" +
-		"# Any OpenAI-compatible API, a gateway or a model on this machine:\n" +
-		"#   TRANS_PROVIDER=openai\n" +
-		"#   TRANS_API_KEY=sk-...\n" +
-		"#   TRANS_ENDPOINT=https://api.deepseek.com/v1\n" +
-		"#   TRANS_MODEL=deepseek-chat\n"
-	_ = os.WriteFile(file, []byte(starter), 0o600)
-}
-
-func drafts(settings *config.Settings, title string) overlay.Drafts {
-	if !settings.KeepDraft || settings.StateDir == "" {
+func drafts(cfg *config.Settings, title string) overlay.Drafts {
+	if !cfg.KeepDraft || cfg.StateDir == "" {
 		return nil
 	}
 	// A handle is different every time a terminal starts; its title is what the
 	// author would recognize as the pane they were writing in.
 	key := title
 	if strings.TrimSpace(key) == "" {
-		key = settings.Target
+		key = cfg.Target
 	}
-	return draft.NewStore(settings.StateDir).For(key)
+	return draft.NewStore(cfg.StateDir).For(key)
 }
 
 func boolSetting(value bool) string {

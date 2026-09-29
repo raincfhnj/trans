@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 func composer(t *testing.T, options overlay.Options, translator promptflow.Translator) (tea.Model, *recordingTarget) {

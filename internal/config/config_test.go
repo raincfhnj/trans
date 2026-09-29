@@ -99,7 +99,7 @@ func TestLoadReadsSettingsFromTheDotEnvInTheConfigDirectory(t *testing.T) {
 	configDir := configDirContaining(t, "# credentials\nTRANS_API_KEY=key-from-file\nTRANS_LANGUAGE=\"EN-GB\"\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"TRANS_TARGET":      "w1:p3",
+		"TRANS_TARGET":     "w1:p3",
 		"TRANS_CONFIG_DIR": configDir,
 	}))
 	if err != nil {
@@ -121,8 +121,8 @@ func TestAServiceSpecificKeyWinsOverTheGenericOne(t *testing.T) {
 	configDir := configDirContaining(t, "TRANS_API_KEY=generic-key\nTRANS_ACME_API_KEY=acme-key\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"TRANS_TARGET":      "w1:p3",
-		"TRANS_PROVIDER":    "acme",
+		"TRANS_TARGET":     "w1:p3",
+		"TRANS_PROVIDER":   "acme",
 		"TRANS_CONFIG_DIR": configDir,
 	}))
 	if err != nil {
@@ -138,9 +138,9 @@ func TestTheEnvironmentWinsOverTheDotEnvFile(t *testing.T) {
 	configDir := configDirContaining(t, "TRANS_API_KEY=key-from-file\n")
 
 	settings, err := config.Load(envFrom(map[string]string{
-		"TRANS_TARGET":      "w1:p3",
+		"TRANS_TARGET":     "w1:p3",
 		"TRANS_CONFIG_DIR": configDir,
-		"TRANS_API_KEY":     "key-from-environment",
+		"TRANS_API_KEY":    "key-from-environment",
 	}))
 	if err != nil {
 		t.Fatalf("Load returned unexpected error: %v", err)

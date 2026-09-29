@@ -21,7 +21,6 @@ import (
 )
 
 func main() {
-
 	spec := os.Getenv("TRANS_HOTKEY")
 	if spec == "" {
 		spec = "ctrl+alt+t"

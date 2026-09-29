@@ -36,7 +36,7 @@ func (r *Registry) Names() []string {
 	return append([]string(nil), r.order...)
 }
 
-func (r *Registry) Translator(name string, options Options) (Translator, error) {
+func (r *Registry) Translator(name string, options *Options) (Translator, error) {
 	if name == "" {
 		name = r.Default()
 	}
@@ -47,7 +47,7 @@ func (r *Registry) Translator(name string, options Options) (Translator, error) 
 			name, strings.Join(r.order, ", "))
 	}
 
-	translator, err := provider.New(options)
+	translator, err := provider.New(*options)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}

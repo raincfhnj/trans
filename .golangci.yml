@@ -55,17 +55,52 @@ linters:
         linters:
           - gosec
         text: G101|G304
-      # Shelling out to the herdr CLI with our own arguments is the whole job.
-      - path: internal/herdr/execrunner\.go
+      # The Provider interface builds translators with New(options Options): the
+      # options are taken by value by design, so the implementations cannot
+      # switch to a pointer without changing the interface itself.
+      - path: internal/(command|deepl|google|gtranslate|mymemory|openai)/provider\.go
+        linters:
+          - gocritic
+        text: hugeParam
+      # The test double implements that same interface, so it takes the options
+      # by value for the same reason.
+      - path: internal/translation/registry_test\.go
+        linters:
+          - gocritic
+        text: hugeParam
+      # These conversions are the widths of the Win32 API itself: window
+      # coordinates are int32 and may legitimately be negative on a
+      # multi-monitor setup — clamping would be wrong — while thread ids and
+      # pointer-sized handles are uint32/uintptr.
+      - path: internal/win32/
         linters:
           - gosec
-        text: G204
+        text: G115
+      # The paths stat'ed, created and written come from os.UserConfigDir(),
+      # os.UserCacheDir() and the TRANS_CONFIG_DIR the user set for themselves:
+      # the same user's own environment, not input from anyone else.
+      - path: cmd/trans-window/main\.go
+        linters:
+          - gosec
+        text: G703
+      # The same for the log file: the directory is os.UserCacheDir()/trans and
+      # the program name is this program's own, never outside input.
+      - path: internal/winlog/
+        linters:
+          - gosec
+        text: G304
 
 formatters:
   enable:
     - gofumpt
     - goimports
   settings:
+    gofumpt:
+      # The module path is "trans". Without it, gofumpt treats trans/... imports
+      # as part of the standard library and joins them into the first import
+      # group, while goimports with local-prefixes trans immediately splits them
+      # back out — run and fmt then disagree forever about every such file.
+      module-path: trans
     goimports:
       local-prefixes:
         - trans

@@ -46,10 +46,10 @@ type Settings struct {
 	Options    translation.Options
 	ConfigFile string
 	// StateDir is where an unfinished prompt is kept between sessions.
-	StateDir string
-	Submit   bool
-	Vim      bool
-	Live     bool
+	StateDir  string
+	Submit    bool
+	Vim       bool
+	Live      bool
 	KeepDraft bool
 	Confirm   bool
 	Pulse     bool

@@ -38,7 +38,7 @@ func TestTheRegistryBuildsTheRequestedProviderWithTheGivenOptions(t *testing.T) 
 	registry := translation.NewRegistry(&fakeProvider{name: "other"}, wanted)
 	options := translation.Options{APIKey: "key-123", TargetLanguage: "EN-GB"}
 
-	translator, err := registry.Translator("wanted", options)
+	translator, err := registry.Translator("wanted", &options)
 	if err != nil {
 		t.Fatalf("Translator returned unexpected error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestAnEmptyProviderNameFallsBackToTheFirstRegistered(t *testing.T) {
 		t.Errorf("Default is %q, want the first registered provider", registry.Default())
 	}
 
-	translator, err := registry.Translator("", translation.Options{})
+	translator, err := registry.Translator("", &translation.Options{})
 	if err != nil {
 		t.Fatalf("Translator returned unexpected error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestAnUnknownProviderNamesTheOnesAvailable(t *testing.T) {
 	t.Parallel()
 	registry := translation.NewRegistry(&fakeProvider{name: "first"}, &fakeProvider{name: "second"})
 
-	_, err := registry.Translator("nope", translation.Options{})
+	_, err := registry.Translator("nope", &translation.Options{})
 
 	if err == nil {
 		t.Fatal("Translator returned no error, want a complaint about the unknown provider")
@@ -89,7 +89,7 @@ func TestAProviderThatCannotBeBuiltReportsWhy(t *testing.T) {
 	refusal := errors.New("no API key")
 	registry := translation.NewRegistry(&fakeProvider{name: "picky", err: refusal})
 
-	_, err := registry.Translator("picky", translation.Options{})
+	_, err := registry.Translator("picky", &translation.Options{})
 
 	if !errors.Is(err, refusal) {
 		t.Errorf("Translator returned %v, want the provider's own error", err)

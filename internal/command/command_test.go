@@ -42,7 +42,7 @@ func TestACommandThatFailsIsReportedWithWhatItComplainedAbout(t *testing.T) {
 }
 
 func TestACommandThatIsNotInstalledSaysSo(t *testing.T) {
-	translator := command.New("herdr-polyglot-no-such-translator -m de-en")
+	translator := command.New("trans-no-such-translator -m de-en")
 
 	_, err := translator.Translate(context.Background(), "Bitte behebe den Test")
 

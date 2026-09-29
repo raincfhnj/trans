@@ -7,6 +7,7 @@ package gtranslate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -112,7 +113,7 @@ func decode(raw []byte) (string, error) {
 		return "", fmt.Errorf("reading the translation: %w", err)
 	}
 	if len(top) == 0 {
-		return "", fmt.Errorf("the service answered without a translation")
+		return "", errors.New("the service answered without a translation")
 	}
 
 	var segments [][]json.RawMessage
@@ -132,7 +133,7 @@ func decode(raw []byte) (string, error) {
 		whole.WriteString(piece)
 	}
 	if whole.Len() == 0 {
-		return "", fmt.Errorf("the service answered without a translation")
+		return "", errors.New("the service answered without a translation")
 	}
 	return whole.String(), nil
 }

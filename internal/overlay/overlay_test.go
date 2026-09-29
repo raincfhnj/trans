@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/exp/teatest"
-
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/teatest"
 )
 
 const (
@@ -842,7 +842,7 @@ func TestAResumedDraftArrivesWithLiveTranslationOff(t *testing.T) {
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
 }
 
-// Herdr closes a popup by hanging up on it, and ctrl+c never reaches the close
+// Closing the popup hangs up on the program, and ctrl+c never reaches the close
 // key either. Whatever ends the session, the writing has to survive it.
 func TestADraftSurvivesAnEndingNobodyAskedFor(t *testing.T) {
 	t.Parallel()

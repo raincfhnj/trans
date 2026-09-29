@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.json
+
+# Template: replace {{VERSION}} (the tag without its leading v) and the two
+# {{SHA256_*}} placeholders with the zip hashes from SHA256SUMS.txt before
+# submitting. The zip URLs are the release assets named in packaging/README.md.
+PackageIdentifier: raincfhnj.trans
+PackageVersion: "{{VERSION}}"
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: trans-window.exe
+        PortableCommandAlias: trans-window
+      - RelativeFilePath: trans-windowd.exe
+    InstallerUrl: "https://github.com/raincfhnj/trans/releases/download/v{{VERSION}}/trans-window-{{VERSION}}-windows-amd64.zip"
+    InstallerSha256: "{{SHA256_AMD64}}"
+    Commands:
+      - trans-window
+  - Architecture: arm64
+    InstallerType: zip
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: trans-window.exe
+        PortableCommandAlias: trans-window
+      - RelativeFilePath: trans-windowd.exe
+    InstallerUrl: "https://github.com/raincfhnj/trans/releases/download/v{{VERSION}}/trans-window-{{VERSION}}-windows-arm64.zip"
+    InstallerSha256: "{{SHA256_ARM64}}"
+    Commands:
+      - trans-window
+ManifestType: installer
+ManifestVersion: 1.6.0

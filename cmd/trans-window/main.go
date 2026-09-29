@@ -23,8 +23,6 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"trans/internal/config"
 	"trans/internal/draft"
 	"trans/internal/overlay"
@@ -34,6 +32,8 @@ import (
 	"trans/internal/win32"
 	"trans/internal/winlog"
 	"trans/internal/wintarget"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func main() {
 		case "open":
 			exit(runOpen(os.Args[2:]))
 		case "list-windows":
-			exit(listWindows())
+			listWindows()
 		case "translate":
 			exit(translate(os.Args[2:]))
 		}
@@ -77,7 +77,7 @@ func runOpen(arguments []string) error {
 			submit = false
 		case "--target":
 			if index+1 >= len(arguments) {
-				return fmt.Errorf("--target needs a window handle or a title")
+				return errors.New("--target needs a window handle or a title")
 			}
 			setting = arguments[index+1]
 			index++
@@ -85,7 +85,7 @@ func runOpen(arguments []string) error {
 			// For checking that the panel lands where it belongs without a person
 			// sitting in front of it: the panel closes itself again.
 			if index+1 >= len(arguments) {
-				return fmt.Errorf("--probe needs a number of milliseconds")
+				return errors.New("--probe needs a number of milliseconds")
 			}
 			probe = arguments[index+1]
 			index++
@@ -104,7 +104,7 @@ func runOpen(arguments []string) error {
 	} else {
 		window = win32.Foreground()
 		if window.Handle == 0 {
-			err = fmt.Errorf("no window in front to open the panel over")
+			err = errors.New("no window in front to open the panel over")
 		}
 	}
 	if err != nil {
@@ -245,7 +245,7 @@ func runPanel() error {
 			SendKey: "ctrl+d",
 			Cursor:  cursor,
 
-			Drafts: drafts(settings, window.Title),
+			Drafts: drafts(&settings, window.Title),
 		}),
 		programOptions...,
 	)
@@ -300,22 +300,21 @@ func (c cursorFollower) Write(frame []byte) (int, error) {
 	return written, err
 }
 
-func listWindows() error {
+func listWindows() {
 	for _, window := range win32.Windows() {
 		fmt.Printf("%#x\t%s\n", window.Handle, window.Title)
 	}
-	return nil
 }
 
 func translate(arguments []string) error {
 	if len(arguments) == 0 {
-		return fmt.Errorf("translate needs the text to translate")
+		return errors.New("translate needs the text to translate")
 	}
 	defaultDirectories()
 	// Nothing is delivered here, so there is no pane to name; the setting is only
 	// what a panel would need.
 	if os.Getenv("TRANS_TARGET") == "" {
-		os.Setenv("TRANS_TARGET", "none")
+		_ = os.Setenv("TRANS_TARGET", "none")
 	}
 
 	settings, err := config.Load(os.Getenv)
@@ -323,7 +322,11 @@ func translate(arguments []string) error {
 		return err
 	}
 	chosen := service.Choose(&settings)
-	translated, err := chosen.Translator.Translate(context.Background(), strings.Join(arguments, " "))
+	// The command line carries the text the way the panel does — code and all —
+	// so it goes out through the same protection: a fenced or backticked span is
+	// kept out of the request rather than sent to the service as prose.
+	translated, err := translation.Protecting(chosen.Translator).
+		Translate(context.Background(), strings.Join(arguments, " "))
 	if err != nil {
 		return err
 	}
@@ -335,14 +338,14 @@ func translate(arguments []string) error {
 func defaultDirectories() {
 	if os.Getenv("TRANS_CONFIG_DIR") == "" {
 		if directory, err := os.UserConfigDir(); err == nil {
-			os.Setenv("TRANS_CONFIG_DIR", filepath.Join(directory, "trans"))
+			_ = os.Setenv("TRANS_CONFIG_DIR", filepath.Join(directory, "trans"))
 		}
 	}
 	if os.Getenv("TRANS_STATE_DIR") == "" {
 		if directory, err := os.UserCacheDir(); err == nil {
 			state := filepath.Join(directory, "trans", "state")
 			_ = os.MkdirAll(state, 0o700)
-			os.Setenv("TRANS_STATE_DIR", state)
+			_ = os.Setenv("TRANS_STATE_DIR", state)
 		}
 	}
 	writeStarterEnv()
@@ -380,7 +383,7 @@ func writeStarterEnv() {
 	_ = os.WriteFile(file, []byte(starter), 0o600)
 }
 
-func drafts(settings config.Settings, title string) overlay.Drafts {
+func drafts(settings *config.Settings, title string) overlay.Drafts {
 	if !settings.KeepDraft || settings.StateDir == "" {
 		return nil
 	}

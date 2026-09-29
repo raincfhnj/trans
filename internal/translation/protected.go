@@ -22,9 +22,11 @@ const (
 )
 
 // A fence runs to the closing one, or to the end of a draft still being written.
-// Inline spans need both backticks: a lone one is a character someone typed.
+// An inline span follows the same rule: it needs both backticks to close — and
+// may cross a line break — while a lone one, still being typed, holds back
+// everything after it, so half-written code is never sent.
 var protectedSpans = regexp.MustCompile(
-	"(?s)```.*?```|```.*$|`[^`\n]+`|" + markerOpen + `\d*` + markerClose)
+	"(?s)```.*?```|```.*$|`[^`]+`|`[^`]*$|" + markerOpen + `\d*` + markerClose)
 
 type protecting struct{ translator Translator }
 

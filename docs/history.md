@@ -45,4 +45,27 @@ as the drafts — created for you alone (`0600` where the filesystem keeps
 access bits, which Windows does not) — and it never leaves your machine. The
 panel only reads it back to offer it to you.
 
-See [README](../README.md#sent-prompt-history) for the two settings.
+# Translation memory
+
+While a draft is written, the panel translates it sentence by sentence and
+remembers what each sentence cost, so retyping an earlier sentence costs
+nothing the second time. That memory used to live only in the running panel;
+`tm.jsonl` in the state directory lets it outlive one.
+
+- Each sentence is written as it is learned — no waiting for the panel to
+  close, and a window hung up on the way out does not lose what it learned.
+- What is written is the sentence as the cache keys it: with the sentence
+  before it, and with a code block held out of it as a marker, never the code
+  itself. The file holds your own prompts and their English, and it is
+  written with the same private-and-atomic posture as the drafts: `0600`
+  where the filesystem keeps access bits, rewritten as a whole file moved
+  into place so it is never half one version and half another.
+- The memory keeps `TRANS_TM_LIMIT` sentences — 5000 by default — in the
+  order they were learned, and drops the oldest first after a restart too.
+- A line that does not parse, or a file that cannot be read at all, is a cold
+  cache: the sentence costs one request to have back, and nothing else is
+  lost.
+- `TRANS_TM=0` keeps the memory for the session alone, and `TRANS_TM_LIMIT`
+  says how much is written.
+
+See [README](../README.md#translation-memory) for the two settings.

@@ -329,6 +329,7 @@ func TestAValueThatIsNeitherOnNorOffIsRefused(t *testing.T) {
 		"TRANS_KEEP_DRAFT",
 		"TRANS_PULSE",
 		"TRANS_HISTORY",
+		"TRANS_TM",
 	} {
 		environment := map[string]string{
 			"TRANS_TARGET": "w1:p1",
@@ -390,16 +391,50 @@ func TestTheRecordOfDeliveredPromptsIsKeptUnlessTurnedOff(t *testing.T) {
 	}
 }
 
+// The translations are written out between sessions unless they are not, and
+// how many sentences are kept is a number the setting has to make sense of.
+func TestTheTranslationMemoryIsKeptUnlessTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p1"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if !settings.TM {
+		t.Error("TM is false, want the memory kept by default")
+	}
+	if settings.TMLimit != 5000 {
+		t.Errorf("TMLimit is %d, want 5000 by default", settings.TMLimit)
+	}
+
+	off, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":   "w1:p1",
+		"TRANS_TM":       "off",
+		"TRANS_TM_LIMIT": "999",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if off.TM {
+		t.Error("TM is true, want it turned off by TRANS_TM=off")
+	}
+	if off.TMLimit != 999 {
+		t.Errorf("TMLimit is %d, want 999 from TRANS_TM_LIMIT", off.TMLimit)
+	}
+}
+
 func TestAnUnreadableLimitIsRefused(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []string{"0", "viele"} {
-		_, err := config.Load(envFrom(map[string]string{
-			"TRANS_TARGET":        "w1:p1",
-			"TRANS_HISTORY_LIMIT": value,
-		}))
-		if err == nil || !strings.Contains(err.Error(), "TRANS_HISTORY_LIMIT") {
-			t.Errorf("TRANS_HISTORY_LIMIT=%s failed with %v, want the variable named", value, err)
+	for _, variable := range []string{"TRANS_HISTORY_LIMIT", "TRANS_TM_LIMIT"} {
+		for _, value := range []string{"0", "viele"} {
+			_, err := config.Load(envFrom(map[string]string{
+				"TRANS_TARGET": "w1:p1",
+				variable:       value,
+			}))
+			if err == nil || !strings.Contains(err.Error(), variable) {
+				t.Errorf("%s=%s failed with %v, want the variable named", variable, value, err)
+			}
 		}
 	}
 }

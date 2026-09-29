@@ -129,6 +129,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_PULSE` | `1` | `0` stops the live circle animation |
 | `TRANS_LOGO` | `1` | `0` hides the draft box signature |
 | `TRANS_HOTKEY` | `ctrl+alt+t` | Hotkey for the daemon |
+| `TRANS_READ_LANGUAGE` | `ZH` | Language read-mode results come back in |
+| `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
 
 ### Services that need no key
 
@@ -176,3 +178,20 @@ Reference: [wazum/herdr-polyglot](https://github.com/wazum/herdr-polyglot)
 ## License
 
 [MIT](LICENSE)
+
+## Read mode
+
+The panel the other way round: English text goes in, your language comes back,
+and nothing is delivered into the window — `ctrl+d` copies the result instead,
+and `esc` closes.
+
+```bash
+trans-window open --read               # read what is on the clipboard
+trans-window open --read --capture     # start from the selection in that window
+```
+
+Both are what a hotkey should invoke. Capture saves the clipboard, brings the
+target window forward, presses `TRANS_CAPTURE_KEYS` to copy the selection, and
+puts the clipboard back the way it was. See
+[docs/read-mode.md](docs/read-mode.md) for the details, the terminals-that-treat-
+the-chord-as-an-interrupt caveat, and the settings involved.

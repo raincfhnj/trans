@@ -6,6 +6,9 @@
 //	trans-window                 the panel itself, opened by `open`
 //	trans-window open            opens the panel over the window in front
 //	trans-window open --review   the same, but only types the prompt in
+//	trans-window open --read     the other way round: English in, your language back
+//	trans-window open --read --capture
+//	                            read mode, starting from the selection in that window
 //	trans-window open --target 0x1a2b3c | "Windows Terminal"
 //	trans-window list-windows    what can be opened over, with the handles
 //	trans-window translate TEXT  asks the configured service, without a panel
@@ -63,42 +66,70 @@ func exit(err error) {
 	os.Exit(1)
 }
 
-// runOpen works out which window the panel belongs over and opens it there. A
-// window named in the setting wins; without one it is the window the author is
-// working in, which is the pane a keybinding would have been pressed in.
-func runOpen(arguments []string) error {
-	submit := true
-	setting := ""
-	probe := ""
+// openOptions is what the command line asked for. The panel itself is a fresh
+// process, so this is also what has to be handed on to it.
+type openOptions struct {
+	submit  bool
+	read    bool
+	capture bool
+	target  string
+	probe   string
+}
+
+func parseOpen(arguments []string) (openOptions, error) {
+	options := openOptions{submit: true}
 
 	for index := 0; index < len(arguments); index++ {
 		switch arguments[index] {
 		case "--review":
-			submit = false
+			options.submit = false
+		case "--read":
+			options.read = true
+		case "--capture":
+			options.capture = true
 		case "--target":
 			if index+1 >= len(arguments) {
-				return fmt.Errorf("--target needs a window handle or a title")
+				return options, errors.New("--target needs a window handle or a title")
 			}
-			setting = arguments[index+1]
+			options.target = arguments[index+1]
 			index++
 		case "--probe":
 			// For checking that the panel lands where it belongs without a person
 			// sitting in front of it: the panel closes itself again.
 			if index+1 >= len(arguments) {
-				return fmt.Errorf("--probe needs a number of milliseconds")
+				return options, errors.New("--probe needs a number of milliseconds")
 			}
-			probe = arguments[index+1]
+			options.probe = arguments[index+1]
 			index++
 		default:
-			return fmt.Errorf("unknown argument %q", arguments[index])
+			return options, fmt.Errorf("unknown argument %q", arguments[index])
 		}
 	}
+
+	// Capture presses a chord into a window and reads back what it copied. For
+	// a panel that delivers into that window the same way it always has, that
+	// would be a trick with no purpose — so the two flags belong together.
+	if options.capture && !options.read {
+		return options, errors.New("--capture belongs to --read: it starts a read-mode draft")
+	}
+	return options, nil
+}
+
+// runOpen works out which window the panel belongs over and opens it there. A
+// window named in the setting wins; without one it is the window the author is
+// working in, which is the pane a keybinding would have been pressed in.
+func runOpen(arguments []string) error {
+	options, err := parseOpen(arguments)
+	if err != nil {
+		return err
+	}
+
+	setting := options.target
 	if setting == "" {
 		setting = os.Getenv("TRANS_TARGET")
 	}
 
 	var window win32.Window
-	var err error
 	if strings.TrimSpace(setting) != "" {
 		window, err = win32.Resolve(win32.ParseTarget(setting))
 	} else {
@@ -119,10 +150,14 @@ func runOpen(arguments []string) error {
 	environment := append(os.Environ(),
 		fmt.Sprintf("TRANS_TARGET=%#x", window.Handle),
 		"TRANS_TARGET_TITLE="+window.Title,
-		"TRANS_SUBMIT="+boolSetting(submit),
+		"TRANS_SUBMIT="+boolSetting(options.submit),
+		// The panel is a fresh process, so what was asked for on this command
+		// line reaches it the only way there is: as settings of its own.
+		"TRANS_READ="+boolSetting(options.read),
+		"TRANS_CAPTURE="+boolSetting(options.capture),
 	)
-	if probe != "" {
-		environment = append(environment, "TRANS_PROBE_MS="+probe)
+	if options.probe != "" {
+		environment = append(environment, "TRANS_PROBE_MS="+options.probe)
 	}
 
 	// Windows Terminal places a window better than a console window places
@@ -165,12 +200,33 @@ func runPanel() error {
 		return err
 	}
 
+	// Read mode is the panel the other way round. The command line that opened
+	// it left the word here; without one this is the panel it always was.
+	read := os.Getenv("TRANS_READ") == "1"
+	if read {
+		// The translator is the one that was chosen — same provider, same
+		// credentials, same bill — pointed the other way: what comes in is text
+		// to read, what comes back is the author's own language.
+		settings.Options.TargetLanguage = settings.ReadLanguage
+	}
 	chosen := service.Choose(&settings)
 	translator := chosen.Translator
 
 	pasteKeys := settings.PasteKeys
 	if pasteKeys == "" {
 		pasteKeys = win32.DefaultPasteChord()
+	}
+
+	// The panel is about to cover the window it opens over, so a selection
+	// there has to be picked up before that, while the window can still take
+	// the keys.
+	var prefill string
+	var prefillTrouble error
+	if read {
+		prefill, prefillTrouble = readSource(systemPorts, window.Handle,
+			os.Getenv("TRANS_CAPTURE") == "1", settings.CaptureKeys)
+		winlog.Note("panel", "read mode: %d characters of source, trouble %v",
+			len(prefill), prefillTrouble)
 	}
 
 	winlog.Note("panel", "opening over %#x %q, service %s, paste %s",
@@ -202,10 +258,18 @@ func runPanel() error {
 		flowOptions = append(flowOptions, promptflow.WithUsageReporter(spending))
 	}
 
+	// There are two ways a prompt reaches an agent and no more, which is why
+	// the flow names them both. In read mode neither happens: the translation
+	// is copied to the clipboard, and the author pastes it where it belongs.
+	var sending, typing promptflow.Target = wintarget.NewSending(window.Handle, pasteKeys),
+		wintarget.NewTyping(window.Handle, pasteKeys)
+	if read {
+		sending, typing = copying{}, copying{}
+	}
 	flow := promptflow.New(
 		translation.Protecting(translator),
-		wintarget.NewSending(window.Handle, pasteKeys),
-		wintarget.NewTyping(window.Handle, pasteKeys),
+		sending,
+		typing,
 		flowOptions...,
 	)
 
@@ -244,6 +308,10 @@ func runPanel() error {
 			// that does send: ctrl+d.
 			SendKey: "ctrl+d",
 			Cursor:  cursor,
+
+			Read:           read,
+			Prefill:        prefill,
+			PrefillTrouble: prefillTrouble,
 
 			Drafts: drafts(settings, window.Title),
 		}),

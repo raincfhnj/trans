@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  # Lets the lint action annotate the offending lines in a pull request.
+  checks: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+
+      # Everything outside the windows files has to build without them.
+      - name: Build for linux
+        run: GOOS=linux go build ./...
+
+      # The panel and the daemon are Windows programs, and their files are
+      # compiled nowhere else on this job: the linter and the tests here run
+      # as linux, so this cross-build is their guard.
+      - name: Cross-build for windows
+        run: GOOS=windows go build ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Check for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: go build ./...
+
+      # No -race here: the detector needs cgo and therefore gcc, which the
+      # windows images do not promise; the race suite runs in the linux job.
+      # This is the plain run on the system the program is written for — the
+      # tests that need a desktop skip themselves when the session has none.
+      - name: Test
+        run: go test ./...

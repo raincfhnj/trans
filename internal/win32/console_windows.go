@@ -3,12 +3,14 @@
 package win32
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -47,8 +49,10 @@ func OpenOver(options PopupOptions) error {
 		return fmt.Errorf("the window %q has no area to open over", over.Title)
 	}
 
-	console, err := consoleHandle()
-	if err != nil {
+	// The console has to be there before any of it can be moved. The resize
+	// asks for it again on every attempt and its failure is only a delay, so
+	// this is the one place that says a missing console out loud.
+	if _, err := consoleHandle(); err != nil {
 		return err
 	}
 
@@ -56,7 +60,7 @@ func OpenOver(options PopupOptions) error {
 	for attempt := 0; attempt < 15; attempt++ {
 		host := hostWindow()
 		if host == 0 {
-			trouble = fmt.Errorf("the window drawing this console cannot be found")
+			trouble = errors.New("the window drawing this console cannot be found")
 			time.Sleep(80 * time.Millisecond)
 			continue
 		}
@@ -65,7 +69,7 @@ func OpenOver(options PopupOptions) error {
 		if call(procGetConsoleWindow) == host {
 			stripFrame(host)
 		}
-		if trouble = fitToPane(console, host, options, area); trouble == nil {
+		if trouble = fitToPane(host, options, area); trouble == nil {
 			break
 		}
 		time.Sleep(80 * time.Millisecond)
@@ -78,7 +82,7 @@ func OpenOver(options PopupOptions) error {
 
 // fitToPane asks the console for the cells the overlay wants — the host resizes
 // its window to them — and then centres that window over the pane.
-func fitToPane(console, host uintptr, options PopupOptions, area rect) error {
+func fitToPane(host uintptr, options PopupOptions, area rect) error {
 	columns, rows := options.Width, options.Height
 
 	// A window larger than the pane it is meant to sit on is worth asking smaller
@@ -101,7 +105,7 @@ func fitToPane(console, host uintptr, options PopupOptions, area rect) error {
 
 	present := windowRect(host)
 	if present.width() <= 0 || present.height() <= 0 {
-		return fmt.Errorf("the window drawing this console has no size")
+		return errors.New("the window drawing this console has no size")
 	}
 
 	left := area.Left + (area.width()-present.width())/2
@@ -133,23 +137,23 @@ func wentTo(handle uintptr, left, top, width, height int32) bool {
 
 func takeKeyboard(host uintptr) error {
 	if host == 0 {
-		return fmt.Errorf("the window drawing this console cannot be found")
+		return errors.New("the window drawing this console cannot be found")
 	}
 	if call(procSetForegroundWindow, host) == 0 {
-		return fmt.Errorf("the panel could not take the keyboard")
+		return errors.New("the panel could not take the keyboard")
 	}
 	return nil
 }
 
 // WindowRectOf is where a window is, which is what a check asks about.
-func WindowRectOf(handle uintptr) (int32, int32, int32, int32) {
+func WindowRectOf(handle uintptr) (left, top, right, bottom int32) {
 	area := windowRect(handle)
 	return area.Left, area.Top, area.Right, area.Bottom
 }
 
 // ScreenSize is the coordinate space a window is placed in, which is worth
 // knowing when a window does not end up where it was put.
-func ScreenSize() (int32, int32) {
+func ScreenSize() (columns, rows int32) {
 	return int32(call(procGetSystemMetrics, 0)), int32(call(procGetSystemMetrics, 1))
 }
 
@@ -291,7 +295,7 @@ func resizeOnce(handle uintptr, columns, rows int) error {
 func consoleHandle() (uintptr, error) {
 	handle := call(procGetStdHandle, stdOutputHandle)
 	if handle == 0 || handle == ^uintptr(0) {
-		return 0, fmt.Errorf("this process has no console output")
+		return 0, errors.New("this process has no console output")
 	}
 	return handle, nil
 }
@@ -304,19 +308,19 @@ func windowRect(handle uintptr) rect {
 
 // Spawn opens a program in a console window of its own, which is what lets the
 // panel appear where the pane is rather than inside the terminal that opened it.
-func Spawn(program string, arguments []string, environment []string) error {
+func Spawn(program string, arguments, environment []string) error {
 	return spawn(program, arguments, environment, createNewConsole)
 }
 
 // SpawnQuietly opens a program with no window at all, for the step in between
 // that only works out where the panel belongs.
-func SpawnQuietly(program string, arguments []string, environment []string) error {
+func SpawnQuietly(program string, arguments, environment []string) error {
 	return spawn(program, arguments, environment, createNoWindow)
 }
 
 // The environment block is UTF-16, and a block that is not said to be one is
 // read as ANSI — which Windows refuses rather than mishandles.
-func spawn(program string, arguments []string, environment []string, flags uint32) error {
+func spawn(program string, arguments, environment []string, flags uint32) error {
 	flags |= createUnicodeEnvironment
 
 	executable, err := syscall.UTF16PtrFromString(program)
@@ -369,9 +373,9 @@ func environmentBlock(values []string) *uint16 {
 
 	var block []uint16
 	for _, name := range names {
-		// StringToUTF16 ends each entry with the NUL that ends the string; a
-		// second one would end the block right there.
-		block = append(block, syscall.StringToUTF16(latest[name])...)
+		// utf16.Encode writes the code units without the NUL that ends a Go
+		// string; the block carries its own terminator below.
+		block = append(block, utf16.Encode([]rune(latest[name]))...)
 	}
 	block = append(block, 0)
 	return &block[0]
@@ -391,7 +395,7 @@ func commandLineFor(program string, arguments []string) string {
 
 // RegisterHotkey claims a key combination for this program, so the panel can be
 // opened from wherever the author is working.
-func RegisterHotkey(modifiers uint32, key uint32) error {
+func RegisterHotkey(modifiers, key uint32) error {
 	if call(procRegisterHotKey, 0, 1, uintptr(modifiers|modNoRepeat), uintptr(key)) == 0 {
 		return lastError("RegisterHotKey")
 	}
@@ -415,10 +419,7 @@ func WaitForHotkey() bool {
 
 // Keys translates a hotkey written the way a person writes one. The letters and
 // digits are their own virtual key on Windows, which is all the panel needs.
-func Keys(spec string) (uint32, uint32, error) {
-	modifiers := uint32(0)
-	key := uint32(0)
-
+func Keys(spec string) (modifiers, key uint32, err error) {
 	for _, part := range strings.Split(strings.ToLower(spec), "+") {
 		switch strings.TrimSpace(part) {
 		case "ctrl", "control":

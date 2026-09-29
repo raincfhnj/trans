@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) View() string {

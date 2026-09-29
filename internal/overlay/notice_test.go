@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 // plainModel renders without colour, so a test can read the footer as text.

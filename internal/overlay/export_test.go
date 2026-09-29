@@ -3,9 +3,9 @@ package overlay
 import (
 	"errors"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"trans/internal/promptflow"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const DraftHeight = draftHeight

@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"trans/internal/promptflow"
+	"trans/internal/vimarea"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"trans/internal/promptflow"
-	"trans/internal/vimarea"
 )
 
 // Prompter is the draft's way out: translated for reading, delivered for the

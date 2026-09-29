@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 func numberedEnglish(sentences int) string {

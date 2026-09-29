@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 // Herdr does not tell plugins which theme is active, but it does paint the

@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 var manyLines = strings.TrimSpace(strings.Repeat("Zeile\n", 30))

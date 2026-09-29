@@ -4,7 +4,7 @@ package wintarget
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"trans/internal/win32"
@@ -64,10 +64,10 @@ func deliver(ctx context.Context, handle uintptr, pasteKeys, text string, submit
 		return err
 	}
 	if handle == 0 {
-		return fmt.Errorf("no window to deliver the prompt to")
+		return errors.New("no window to deliver the prompt to")
 	}
 	if text == "" {
-		return fmt.Errorf("nothing to deliver")
+		return errors.New("nothing to deliver")
 	}
 
 	// What was on the clipboard belongs to whoever put it there; the prompt only

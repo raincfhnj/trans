@@ -72,39 +72,71 @@ func buildRows(settings config.Settings, options Options) []*row {
 	}
 
 	rows := []*row{
-		{label: "service", variable: config.ProviderVar, kind: choice,
+		{
+			label: "service", variable: config.ProviderVar, kind: choice,
 			choices: append([]string{"auto"}, options.Services...),
-			value:   settings.Provider},
-		{label: "api key", variable: keyVariable, kind: secret,
-			value: settings.Options.APIKey, empty: "not set"},
-		{label: "endpoint", variable: config.EndpointVar, kind: text,
-			value: settings.Options.Endpoint, empty: "the service's own"},
-		{label: "model", variable: config.ModelVar, kind: text,
-			value: settings.Options.Model, empty: "the service's own"},
-		{label: "language", variable: config.LanguageVar, kind: text,
-			value: settings.Options.TargetLanguage},
-		{label: "command", variable: config.CommandVar, kind: text,
-			value: settings.Options.Command, empty: "no command set"},
-		{label: "submit", variable: config.SubmitVar, kind: flag,
-			value: onOff(settings.Submit)},
-		{label: "live", variable: config.LiveVar, kind: flag,
-			value: onOff(settings.Live)},
-		{label: "vim", variable: config.VimVar, kind: flag,
-			value: onOff(settings.Vim)},
-		{label: "confirm", variable: config.ConfirmVar, kind: flag,
-			value: onOff(settings.Confirm)},
-		{label: "keep draft", variable: config.KeepDraftVar, kind: flag,
-			value: onOff(settings.KeepDraft)},
-		{label: "paste keys", variable: config.PasteVar, kind: chord,
-			value: settings.PasteKeys, empty: "automatic"},
-		{label: "select copy", variable: config.SelectCopyVar, kind: chord,
-			value: settings.SelectCopy, empty: "clipboard as it stands"},
-		{label: "panel hotkey", variable: config.HotkeyVar, kind: hotkey,
-			value: settings.Hotkey},
-		{label: "selection hotkey", variable: config.SelectHotkeyVar, kind: hotkey,
-			value: settings.SelectHotkey},
-		{label: "settings hotkey", variable: config.ConfigHotkeyVar, kind: hotkey,
-			value: settings.ConfigHotkey},
+			value:   settings.Provider,
+		},
+		{
+			label: "api key", variable: keyVariable, kind: secret,
+			value: settings.Options.APIKey, empty: "not set",
+		},
+		{
+			label: "endpoint", variable: config.EndpointVar, kind: text,
+			value: settings.Options.Endpoint, empty: "the service's own",
+		},
+		{
+			label: "model", variable: config.ModelVar, kind: text,
+			value: settings.Options.Model, empty: "the service's own",
+		},
+		{
+			label: "language", variable: config.LanguageVar, kind: text,
+			value: settings.Options.TargetLanguage,
+		},
+		{
+			label: "command", variable: config.CommandVar, kind: text,
+			value: settings.Options.Command, empty: "no command set",
+		},
+		{
+			label: "submit", variable: config.SubmitVar, kind: flag,
+			value: onOff(settings.Submit),
+		},
+		{
+			label: "live", variable: config.LiveVar, kind: flag,
+			value: onOff(settings.Live),
+		},
+		{
+			label: "vim", variable: config.VimVar, kind: flag,
+			value: onOff(settings.Vim),
+		},
+		{
+			label: "confirm", variable: config.ConfirmVar, kind: flag,
+			value: onOff(settings.Confirm),
+		},
+		{
+			label: "keep draft", variable: config.KeepDraftVar, kind: flag,
+			value: onOff(settings.KeepDraft),
+		},
+		{
+			label: "paste keys", variable: config.PasteVar, kind: chord,
+			value: settings.PasteKeys, empty: "automatic",
+		},
+		{
+			label: "select copy", variable: config.SelectCopyVar, kind: chord,
+			value: settings.SelectCopy, empty: "clipboard as it stands",
+		},
+		{
+			label: "panel hotkey", variable: config.HotkeyVar, kind: hotkey,
+			value: settings.Hotkey,
+		},
+		{
+			label: "selection hotkey", variable: config.SelectHotkeyVar, kind: hotkey,
+			value: settings.SelectHotkey,
+		},
+		{
+			label: "settings hotkey", variable: config.ConfigHotkeyVar, kind: hotkey,
+			value: settings.ConfigHotkey,
+		},
 	}
 
 	for _, row := range rows {

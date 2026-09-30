@@ -42,7 +42,7 @@ func TestAPlainKeyMovesIntoTheProtectedStore(t *testing.T) {
 		t.Fatalf("loading: %v", err)
 	}
 
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Fatalf("migrating: %s", note)
 	}
 
@@ -104,7 +104,7 @@ func TestAScopedKeyKeepsItsName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Fatalf("migrating: %s", note)
 	}
 
@@ -134,7 +134,7 @@ func TestPlainModeLeavesTheFileAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Fatalf("migrating in plain mode: %s", note)
 	}
 
@@ -163,7 +163,7 @@ func TestNothingToMoveChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Fatalf("migrating: %s", note)
 	}
 	if matches, _ := filepath.Glob(filepath.Join(directory, ".env.bak.*")); len(matches) != 0 {
@@ -184,7 +184,7 @@ func TestRunningTwiceIsHarmless(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Fatalf("first run: %s", note)
 	}
 	again, err := config.Load(envFrom(map[string]string{
@@ -193,7 +193,7 @@ func TestRunningTwiceIsHarmless(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reloading: %v", err)
 	}
-	if note := config.UpgradeSecrets(again); note != "" {
+	if note := config.UpgradeSecrets(&again); note != "" {
 		t.Fatalf("second run: %s", note)
 	}
 	if matches, _ := filepath.Glob(filepath.Join(directory, ".env.bak.*")); len(matches) != 1 {
@@ -214,7 +214,7 @@ func TestUnsupportedSystemsStandDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loading: %v", err)
 	}
-	if note := config.UpgradeSecrets(settings); note != "" {
+	if note := config.UpgradeSecrets(&settings); note != "" {
 		t.Errorf("got note %q, want none", note)
 	}
 	after, err := os.ReadFile(filepath.Join(directory, ".env"))

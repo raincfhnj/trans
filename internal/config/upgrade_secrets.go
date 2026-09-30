@@ -30,7 +30,7 @@ const (
 // On systems without DPAPI, and when TRANS_KEYS=plain, it does nothing and
 // answers a note for the caller to log: a key the user chose to keep in the
 // file still works, and refusing to start would be rude.
-func UpgradeSecrets(settings Settings) string {
+func UpgradeSecrets(settings *Settings) string {
 	if settings.ConfigFile == "" || settings.Keys == keysPlain {
 		return ""
 	}
@@ -74,7 +74,7 @@ func note(variable string, err error) string {
 // Only keys that came from the file are candidates: one handed over in the
 // environment is the caller's to manage, and moving it would change nothing
 // anyway — the environment still wins at the next Load.
-func movable(settings Settings) (string, string) {
+func movable(settings *Settings) (variable, value string) {
 	stored := readDotenv(settings.ConfigFile)
 	if len(stored) == 0 {
 		return "", ""
@@ -97,6 +97,7 @@ func movable(settings Settings) (string, string) {
 // not being touched then, and a .env.bak with no story to tell is just
 // litter beside the settings.
 func backup(file string) error {
+	// #nosec G304 -- the path is the .env the user pointed TRANS_CONFIG_DIR at.
 	content, err := os.ReadFile(file)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -105,6 +106,7 @@ func backup(file string) error {
 		return err
 	}
 	stamp := time.Now().Format("20060102-150405")
+	// #nosec G703 -- the same user-chosen directory, never outside input.
 	return os.WriteFile(file+".bak."+stamp, content, 0o600)
 }
 
@@ -119,20 +121,31 @@ func ResolveKey(settings *Settings) {
 	if settings.Keys == keysPlain {
 		return
 	}
-	variable := ScopedKeyVar(settings.Provider)
-	if variable == "" {
-		variable = ApiKeyVar
-	}
-	value, err := secrets.Load(filepath.Dir(settings.ConfigFile), variable)
-	if err != nil {
+	// The scoped name is tried first and the plain one after it, the same
+	// order Load reads them in: a key filed under TRANS_API_KEY is still the
+	// key for whichever service happens to be chosen today.
+	for _, variable := range keyCandidates(settings.Provider) {
+		value, err := secrets.Load(filepath.Dir(settings.ConfigFile), variable)
+		if err != nil {
+			continue
+		}
+		settings.Options.APIKey = string(value)
 		return
 	}
-	settings.Options.APIKey = string(value)
+}
+
+// keyCandidates is where the key for a service may be filed, most specific
+// first. The plain name is always last so a scoped key never loses to it.
+func keyCandidates(provider string) []string {
+	if scoped := ScopedKeyVar(provider); scoped != "" {
+		return []string{scoped, ApiKeyVar}
+	}
+	return []string{ApiKeyVar}
 }
 
 // KeysMode is TRANS_KEYS as the settings window shows it, defaulting to the
 // protection that is on unless the user turned it off.
-func (s Settings) KeysMode() string {
+func (s *Settings) KeysMode() string {
 	if s.Keys == keysPlain {
 		return keysPlain
 	}

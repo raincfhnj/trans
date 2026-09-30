@@ -15,6 +15,8 @@
 //	trans-window settings        opens the window that edits the settings
 //	trans-window list-windows    what can be opened over, with the handles
 //	trans-window translate TEXT  asks the configured service, without a panel
+//	trans-window setup [--json]  the first-run doctor: what is configured and
+//	                              what is missing, with a fix for each line
 package main
 
 import (
@@ -59,6 +61,8 @@ func main() {
 			listWindows()
 		case "translate":
 			exit(translate(os.Args[2:]))
+		case "setup":
+			exit(runSetup(os.Args[2:]))
 		}
 		// A command was named, so this is not the panel being opened; without
 		// this the panel would run after every one of them.

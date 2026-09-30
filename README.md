@@ -26,6 +26,8 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 - **Code protection** — backticked spans and fenced blocks are not translated
 - **Translation memory** — a sentence paid for once is not paid for again, not even after a restart
 - **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
+- **Tray icon** — the daemon's chords, the settings window and start-at-logon from the notification area
+- **Encrypted key** — the API key is wrapped with Windows DPAPI, never left in the file
 
 ## Quick start
 
@@ -155,11 +157,41 @@ asked. See [docs/read-mode.md](docs/read-mode.md).
 TRANS_HOTKEY=ctrl+shift+t trans-windowd
 ```
 
-Each chord is claimed when the daemon starts, so one changed in the settings
-window takes effect the next time it starts — the window says so when you save
-one. Set a chord to `off` to leave it unclaimed. On layouts where `ctrl+alt`
-types a character (AltGr on many of them), move the chords to `ctrl+shift`
-before starting.
+Each chord is claimed when the daemon starts — and claimed again whenever the
+tray's *Reload settings* is chosen, so a chord changed in the settings window
+takes effect without a restart. Set a chord to `off` to leave it unclaimed. On
+layouts where `ctrl+alt` types a character (AltGr on many of them), move the
+chords to `ctrl+shift` before starting.
+
+### The tray icon
+
+Right-click the icon in the notification area:
+
+| Item | What it does |
+| --- | --- |
+| Open panel | The same as pressing the panel chord |
+| Close panel | Asks every panel window to close |
+| Settings… | The settings window |
+| Reload settings | Reads the settings again and claims the chords anew |
+| Start at logon | Writes or removes the `HKCU\...\Run` entry for this program |
+| Quit | Gives the chords back and ends the daemon |
+
+`TRANS_TRAY=0` starts no tray at all; the chords work exactly as they did, and
+the only way to end the program is to end the process. A tray that cannot be
+drawn is logged and otherwise ignored. See [docs/tray.md](docs/tray.md).
+
+### Where the API key lives
+
+`TRANS_KEYS=dpapi` (the default) wraps the provider key with the Windows Data
+Protection API and keeps it in `secrets.json` beside the settings, so another
+account on the machine cannot read it. The first time the panel or the daemon
+starts after that, a plaintext key in `.env` is moved: the file is backed up to
+`.env.bak.<timestamp>`, the key is wrapped, and only then is the line taken out
+— so a failure at any point leaves the key recoverable. `TRANS_KEYS=plain`
+leaves the key in the file, untouched.
+
+See [docs/keys.md](docs/keys.md) for the order the move happens in and where
+the files sit.
 
 ## Key bindings
 
@@ -230,6 +262,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
 | `TRANS_TM` | `1` | `0` keeps translations for the session alone |
 | `TRANS_TM_LIMIT` | `5000` | Sentences kept before the oldest are dropped |
+| `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file |
+| `TRANS_TRAY` | `1` | `0` starts the daemon without a tray icon |
 
 ### The settings window
 

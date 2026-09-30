@@ -1,0 +1,6 @@
+# The tree is committed with LF endings on every platform: golangci-lint's
+# formatters compare the working copy against what gofmt would write, and a
+# checkout that turned the files into CRLF made `fmt --diff` report every file
+# as rewritten on Windows. `-text` keeps git from touching them at all, so the
+# bytes checked out are the bytes that were committed.
+* -text

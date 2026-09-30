@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"trans/internal/overlay"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
-
-	"trans/internal/overlay"
 )
 
 // Pasting a wall of text is one keystroke and a whole draft to pay for, so live

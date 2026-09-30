@@ -1,4 +1,4 @@
 // Package wintarget delivers a finished prompt into a pane on this machine. It
-// is the Windows counterpart of the herdr package: herdr hands the prompt to the
-// agent over its own protocol, a terminal here is pasted into.
+// hands the prompt over the only protocol this program has: a terminal is
+// pasted into, where the keyboard would have typed it.
 package wintarget

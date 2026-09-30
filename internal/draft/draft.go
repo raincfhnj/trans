@@ -15,7 +15,7 @@ import (
 // Store is a directory of drafts, one per pane.
 type Store struct{ directory string }
 
-// NewStore takes the directory herdr set aside for this plugin's state. An empty
+// NewStore takes the directory set aside for this program's state. An empty
 // directory means drafts are simply not kept.
 func NewStore(directory string) Store {
 	return Store{directory: directory}

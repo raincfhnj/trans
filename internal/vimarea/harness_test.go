@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"trans/internal/vimarea"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // box builds a modal text area seeded with text, cursor at row 0 col 0, in

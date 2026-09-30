@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) View() string {
@@ -28,7 +28,7 @@ func (m Model) View() string {
 	}
 	parts = append(parts, m.footer(line))
 
-	// Herdr already draws a frame around the popup; a second one inside it only
+	// The window the popup runs in is frame enough; a second one inside it only
 	// takes room from the draft.
 	frame := strings.Join(parts, "\n")
 	m.reportCursor(strings.Count(frame, "\n")+1, true)
@@ -125,9 +125,9 @@ func (m Model) english() (string, lipgloss.Style) {
 	}
 }
 
-// Herdr writes the plugin's name on the popup frame, so the heading is only the
-// badge saying what will happen. It starts one column in, under that name, and
-// is cut rather than allowed to wrap onto the draft.
+// The window carries this program's name in its title, so the heading is only
+// the badge saying what will happen. It starts one column in, under that title,
+// and is cut rather than allowed to wrap onto the draft.
 func (m Model) header(line int) string {
 	return lipgloss.NewStyle().MaxWidth(line - 1).Render(" " + m.badge())
 }

@@ -32,10 +32,20 @@ func (m Model) readKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Type == tea.KeyEnd, key.String() == "G":
 		return m.readFrom(m.readingTotal()), nil
 
-	// Sending from here is the same key as anywhere else: what is on screen is what
-	// the author has just read.
+	// Sending from here is the same key as anywhere else: what is on screen is
+	// what the author has just read — but the stage decides, exactly as it does
+	// while writing, so reading never sends a prompt a second time.
 	case key.Type == tea.KeyCtrlD, key.Type == tea.KeyEnter && key.Alt:
-		return m.flipReading().startSubmit()
+		writing := m.flipReading()
+		switch writing.stage {
+		case translating:
+			// A send is already on its way; the key does nothing.
+			return writing, nil
+		case confirming:
+			return writing.deliverPreview()
+		default:
+			return writing.startSubmit()
+		}
 	}
 
 	// Anything else is writing, so the draft takes it back.

@@ -14,10 +14,12 @@ import (
 )
 
 // A check against the real service, kept behind a build tag so the ordinary suite
-// needs no key and no network:
+// needs no key and no network. The settings come from the environment or from
+// the .env in TRANS_CONFIG_DIR — that directory defaults to
+// os.UserConfigDir()/trans, %APPDATA%\trans on Windows:
 //
-//	HERDR_PLUGIN_CONFIG_DIR="$(herdr plugin config-dir local.trans)" \
-//	HERDR_TRANS_TARGET=w1:p1 HERDR_TRANS_PROVIDER=google \
+//	TRANS_CONFIG_DIR=/path/to/trans \
+//	TRANS_TARGET=w1:p1 TRANS_PROVIDER=google \
 //	go test -tags live -run Live -v ./internal/google/
 func TestLiveTranslationThroughTheRealService(t *testing.T) {
 	settings, err := config.Load(os.Getenv)

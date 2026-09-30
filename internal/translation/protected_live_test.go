@@ -13,10 +13,13 @@ import (
 	"trans/internal/translation"
 )
 
-// The prompts a service was rewriting, put through the real one with protection:
+// The prompts a service was rewriting, put through the real one with protection.
+// The settings come from the environment or from the .env in TRANS_CONFIG_DIR —
+// that directory defaults to os.UserConfigDir()/trans, %APPDATA%\trans on
+// Windows:
 //
-//	HERDR_PLUGIN_CONFIG_DIR="$(herdr plugin config-dir local.trans)" \
-//	HERDR_TRANS_TARGET=w1:p1 go test -tags live -run LiveProtection -v ./internal/translation/
+//	TRANS_CONFIG_DIR=/path/to/trans TRANS_TARGET=w1:p1 \
+//	go test -tags live -run LiveProtection -v ./internal/translation/
 func TestLiveProtectionKeepsCodeAsItWas(t *testing.T) {
 	settings, err := config.Load(os.Getenv)
 	if err != nil {

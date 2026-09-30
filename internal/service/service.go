@@ -1,11 +1,13 @@
 // Package service decides what a draft goes through. The question is the same
-// wherever the popup is opened from — a herdr pane or a window on this machine —
-// so it is answered in one place rather than in every entry point.
+// wherever the popup is opened from — over the window in front or over one
+// asked for by name — so it is answered in one place rather than in every
+// entry point.
 package service
 
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"trans/internal/command"
 	"trans/internal/config"
@@ -58,7 +60,7 @@ func ChooseWith(registry *translation.Registry, settings *config.Settings) Choic
 	name, err := chosenName(settings, registry)
 	if err == nil {
 		var translator translation.Translator
-		translator, err = registry.Translator(name, settings.Options)
+		translator, err = registry.Translator(name, &settings.Options)
 		if err == nil {
 			return Choice{
 				Name:       name,
@@ -80,10 +82,13 @@ func ChooseWith(registry *translation.Registry, settings *config.Settings) Choic
 }
 
 // A key and a command are two answers to the same question, and picking one of
-// them would send the draft somewhere it was not meant to go.
+// them would send the draft somewhere it was not meant to go. `auto` — the
+// default the README documents — names no service: it means "no preference",
+// so the choice still has to be made here.
 func chosenName(settings *config.Settings, registry *translation.Registry) (string, error) {
-	if settings.Provider != "" {
-		return settings.Provider, nil
+	provider := strings.TrimSpace(settings.Provider)
+	if provider != "" && !strings.EqualFold(provider, "auto") {
+		return provider, nil
 	}
 
 	hasKey, hasCommand := settings.Options.APIKey != "", settings.Options.Command != ""

@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
-// Herdr does not tell plugins which theme is active, but it does paint the
-// terminal palette. Sticking to that palette is what makes the overlay follow
+// No program can ask a terminal which theme is active, but the terminal does
+// paint its palette. Sticking to that palette is what makes the overlay follow
 // the theme instead of fighting it.
 func TestTheOverlayPaintsWithTheTerminalPaletteOnly(t *testing.T) {
 	previous := lipgloss.ColorProfile()
@@ -84,8 +84,8 @@ func TestAShortPopupGivesTheDraftTheRoomFirst(t *testing.T) {
 	}
 }
 
-// Herdr paints the popup in whatever its theme says. A background of ours would
-// replace that colour cell by cell, so the overlay sets none.
+// The terminal paints the popup in whatever its theme says. A background of
+// ours would replace that colour cell by cell, so the overlay sets none.
 func TestTheOverlayNeverSetsABackground(t *testing.T) {
 	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)

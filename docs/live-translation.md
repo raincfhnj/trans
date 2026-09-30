@@ -1,7 +1,7 @@
 # Live translation
 
 The English appears in a second box and follows the draft about 600ms after you
-stop typing; `ctrl+l` turns it on and off, and `HERDR_TRANS_LIVE=0` starts with
+stop typing; `ctrl+l` turns it on and off, and `TRANS_LIVE=0` starts with
 it off. Services charge by the character, so the point of this page is what keeps
 that from costing more than translating once.
 
@@ -52,12 +52,14 @@ Quoted strings are deliberately *not* protected. `Ändere den String "Kunde nich
 gefunden" auf Englisch` is a prompt where translating the quoted text is exactly
 what was meant, so quotes carry no reliable intent. Backticks do.
 
-A prompt keeps the shape it was written in. Herdr puts text into an agent's input
-without a line break standing for a keypress — measured against herdr 0.8.0 with
-both `agent prompt` and `pane send-text` — so a code block arrives as a code
-block. Tabs arrive as four spaces, because a tab keystroke in an input box can be
-a completion rather than text, and escape sequences are stripped: those are
-instructions to the terminal, not part of a prompt.
+A prompt keeps the shape it was written in. The text is put on the clipboard and
+pasted into the target window in one go, so a line break arrives as a line break
+and a code block arrives as a code block. Before it travels it is made readable:
+tabs arrive as four spaces, because a tab keystroke in an input box can be a
+completion rather than text; a lone carriage return is dropped, since it would
+only move the cursor back to the start of the line; and control characters are
+stripped — those are instructions to the terminal, not part of a prompt. What
+remains is trimmed at the edges.
 
 ## Sending costs nothing extra
 
@@ -79,7 +81,7 @@ where a translation would not be something you asked for:
   a paste, not writing. Pasted logs and code are the expensive kind of text and
   the least worth translating.
 
-Beyond `HERDR_TRANS_MAX_DRAFT` characters (2,000 by default) a draft stops
+Beyond `TRANS_MAX_DRAFT` characters (2,000 by default) a draft stops
 being translated as you write and the footer says why: this is a box for prompts
 you write, not files you paste. Sending still works, and `ctrl+u` throws the
 draft away.
@@ -93,5 +95,5 @@ that really is wasted.
 
 The circle beside `live` fills and empties while a request is on its way, and
 keeps breathing to the end of a cycle so a fast translation is still visible.
-`HERDR_TRANS_PULSE=0` leaves it still. The header also shows what the key has
+`TRANS_PULSE=0` leaves it still. The header also shows what the key has
 spent this month, when the service reports it — asking costs nothing.

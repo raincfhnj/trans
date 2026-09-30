@@ -122,8 +122,8 @@ func (f *Flow) Usage(ctx context.Context) (Usage, bool, error) {
 
 // Deliver hands over text that has already been translated, so a prompt the
 // author has seen is not translated a second time on its way out. The prompt keeps
-// its line breaks: herdr puts text into an agent's input without a line break
-// standing for a keypress, which is what lets a code block arrive as a code block.
+// its line breaks: it reaches the agent by a clipboard paste, and no line break
+// stands for a keypress, which is what lets a code block arrive as a code block.
 func (f *Flow) Deliver(ctx context.Context, text string, how Delivery) error {
 	prompt := readable(text)
 	if prompt == "" {

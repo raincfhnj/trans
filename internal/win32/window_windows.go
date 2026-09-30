@@ -3,6 +3,7 @@
 package win32
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 	"time"
@@ -63,7 +64,7 @@ func call(proc *syscall.LazyProc, args ...uintptr) uintptr {
 // sets one, and an error that says nothing is still worth saying.
 func lastError(proc string) error {
 	err := syscall.GetLastError()
-	if err == nil || err == syscall.Errno(0) {
+	if err == nil || errors.Is(err, syscall.Errno(0)) {
 		return fmt.Errorf("%s was refused", proc)
 	}
 	return fmt.Errorf("%s failed: %w", proc, err)
@@ -111,6 +112,7 @@ const (
 	vkControl = 0x11
 	vkShift   = 0x10
 	vkMenu    = 0x12
+	vkLWin    = 0x5B
 	vkV       = 0x56
 	vkReturn  = 0x0D
 	vkEscape  = 0x1B
@@ -224,7 +226,7 @@ func Resolve(target Target) (Window, error) {
 // thread of whoever holds it for the moment it takes.
 func Activate(handle uintptr) error {
 	if handle == 0 {
-		return fmt.Errorf("no window to activate")
+		return errors.New("no window to activate")
 	}
 	if call(procIsIconic, handle) != 0 {
 		call(procShowWindow, handle, swRestore)

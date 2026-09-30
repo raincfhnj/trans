@@ -1,16 +1,18 @@
 # Translation on your own machine
 
-`HERDR_TRANS_COMMAND` points the plugin at a program instead of a service. The
+`TRANS_COMMAND` points the popup at a program instead of a service. The
 draft is written to that program's input, and what it writes back is the
 translation. No key, no account, no network.
 
 ```bash
-ENV_FILE="$(herdr plugin config-dir local.trans)/.env"
-echo 'HERDR_TRANS_COMMAND=/Applications/translateLocally.app/Contents/MacOS/translateLocally -m de-en-base' >> "$ENV_FILE"
+# The panel reads .env from TRANS_CONFIG_DIR — %APPDATA%\trans when it is unset.
+ENV_FILE="${TRANS_CONFIG_DIR:-$APPDATA/trans}/.env"
+mkdir -p "$(dirname "$ENV_FILE")"
+echo 'TRANS_COMMAND=/Applications/translateLocally.app/Contents/MacOS/translateLocally -m de-en-base' >> "$ENV_FILE"
 ```
 
 That is the whole configuration: a command and no key means the command
-translates, so `HERDR_TRANS_PROVIDER` can stay unset.
+translates, so `TRANS_PROVIDER` can stay unset.
 
 ## translateLocally
 
@@ -26,7 +28,7 @@ translateLocally --list-models
 ```
 
 The model name carries the direction, so `-m de-en-base` says what
-`HERDR_TRANS_LANGUAGE` says for a service. The setting still names the target
+`TRANS_LANGUAGE` says for a service. The setting still names the target
 language for the header, and the command can read it as
 `$TRANS_TARGET_LANGUAGE` if it would rather be told.
 
@@ -39,9 +41,9 @@ is on the path.
 The command line goes to a shell, so a pipeline, flags and quoting all work:
 
 ```bash
-HERDR_TRANS_COMMAND=curl -s -X POST http://localhost:5000/translate -H 'Content-Type: application/json' --data-binary @- ...
-HERDR_TRANS_COMMAND=trans -brief -no-warn :en
-HERDR_TRANS_COMMAND=ollama run translategemma
+TRANS_COMMAND=curl -s -X POST http://localhost:5000/translate -H 'Content-Type: application/json' --data-binary @- ...
+TRANS_COMMAND=trans -brief -no-warn :en
+TRANS_COMMAND=ollama run translategemma
 ```
 
 Only two rules: read the draft from standard input, and write the translation to

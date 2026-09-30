@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"trans/internal/promptflow"
+	"trans/internal/vimarea"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"trans/internal/promptflow"
-	"trans/internal/vimarea"
 )
 
 // Prompter is the draft's way out: translated for reading, delivered for the
@@ -128,8 +128,8 @@ const (
 	defaultMaxDraft     = 2_000
 	defaultNoticeLinger = 5 * time.Second
 
-	// Herdr keeps some of a popup for its own frame: measured against 0.8.0, a
-	// pane comes back three columns and two rows smaller than the size asked for.
+	// The panel keeps some of a popup for its own frame: three columns and two
+	// rows of the size asked for are frame rather than content.
 	popupChromeColumns = 3
 	popupChromeRows    = 2
 
@@ -170,6 +170,13 @@ type Model struct {
 	draft    vimarea.Model
 	spinner  spinner.Model
 	stage    stage
+	// confirmWait is the number of the preview request the send key is waiting
+	// on while Options.Confirm translates the draft before it may go out. It is
+	// 0 whenever no confirmation is owed, so a cancelled preview reply can tell
+	// whether the translating stage is waiting for it — and must then let go —
+	// or whether the stage belongs to an ordinary send already on its way, which
+	// the reply must not touch.
+	confirmWait int
 	// failure is a broken way out, so it stays on screen.
 	failure error
 	// loadFailure is a kept draft that could not be read, which the author has to
@@ -379,8 +386,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return breathing, tea.Batch(cmd, breathing.beginPulse())
 
 	case previewReadyMsg:
-		if msg.request != m.requested || errors.Is(msg.err, context.Canceled) {
+		if errors.Is(msg.err, context.Canceled) {
+			// A cancelled translation is normally passed over — except the one
+			// the send key is waiting for. That translation will never come, so
+			// the wait is abandoned and the panel goes back in front of the
+			// draft, where the send key works again. Any other cancelled reply
+			// belongs to a preview the stage never waited for and changes
+			// nothing: an ordinary send on its way must keep the stage.
+			if m.confirmWait != 0 && msg.request == m.confirmWait {
+				m.abandonConfirm()
+			}
 			return m, nil
+		}
+		if msg.request != m.requested {
+			return m, nil
+		}
+		if m.confirmWait != 0 && msg.request == m.confirmWait {
+			m.confirmWait = 0
 		}
 		m.previewOf, m.preview, m.previewError = msg.of, msg.text, msg.err
 		m.endPulse()
@@ -416,6 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) emptied() (tea.Model, tea.Cmd) {
 	m.delivered = false
 	m.stage = composing
+	m.confirmWait = 0
 	m.stopPreview()
 	m.draft.Clear()
 	m.draftTop = 0
@@ -433,6 +456,7 @@ func (m Model) emptied() (tea.Model, tea.Cmd) {
 // raiseNotice puts a message up and starts the clock that takes it down again.
 func (m Model) raiseNotice(why error) (tea.Model, tea.Cmd) {
 	m.stage = composing
+	m.confirmWait = 0
 	m.notice = why
 	ticking := m.startNoticeClock()
 	return m, ticking
@@ -564,6 +588,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Type == tea.KeyEsc && m.stage == confirming:
 		m.stage = composing
+		m.confirmWait = 0
 		m.refit()
 		return m, nil
 
@@ -593,12 +618,17 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.revision++
 		started, cmd := m.startPreview()
 		translating := started.(Model)
+		// A confirmation that asked for this translation waits for this one now.
+		if translating.confirmWait != 0 {
+			translating.confirmWait = translating.requested
+		}
 		return translating, tea.Batch(cmd, translating.beginPulse())
 
 	// ctrl+u clears the whole draft, as it clears a line in a shell. The text
 	// area would otherwise use it to delete back to the line start.
 	case key.Type == tea.KeyCtrlU:
 		m.stage = composing
+		m.confirmWait = 0
 		m.draft.Clear()
 		m.draftTop = 0
 		m.forgetDraft()
@@ -606,8 +636,8 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.preview, m.previewOf, m.previewError = "", "", nil
 		return m, nil
 
-	// Sending is deliberate: a bare enter is a new line, alt+enter sends. Herdr
-	// passes the chord through as one key press, so two presses of escape and
+	// Sending is deliberate: a bare enter is a new line, alt+enter sends. The
+	// terminal hands each press over on its own, so two presses of escape and
 	// enter stay two messages and cannot become a send.
 	case key.Type == tea.KeyCtrlD, key.Type == tea.KeyEnter && key.Alt:
 		switch m.stage {
@@ -696,7 +726,19 @@ func (m Model) translateForConfirmation() (tea.Model, tea.Cmd) {
 	model, cmd := m.startPreview()
 	confirming := model.(Model)
 	confirming.stage = translating
+	// The stage waits for exactly this request; while confirmWait says so, a
+	// cancelled reply for it lets go of the wait instead of stranding it.
+	confirming.confirmWait = confirming.requested
 	return confirming, tea.Batch(m.spinner.Tick, cmd)
+}
+
+// abandonConfirm lets go of a confirmation translation that was cancelled on
+// its way. Nothing is on its way out, so the panel returns to the draft: the
+// send key is at work again and any preview already scheduled can run.
+func (m *Model) abandonConfirm() {
+	m.confirmWait = 0
+	m.stage = composing
+	m.refit()
 }
 
 func (m Model) deliverPreview() (tea.Model, tea.Cmd) {
@@ -725,8 +767,15 @@ func (m *Model) stopPreview() {
 }
 
 func (m Model) startSubmit() (tea.Model, tea.Cmd) {
+	// A send already on its way answers for the send key; starting a second one
+	// here would put the same prompt in front of the agent twice.
+	if m.stage == translating {
+		return m, nil
+	}
+
 	draft := m.draft.Value()
 	m.stage = translating
+	m.confirmWait = 0
 	m.notice = nil
 	m.stopPreview()
 
@@ -795,8 +844,8 @@ func (m Model) forgetDraft() {
 		return
 	}
 	if err := m.options.Drafts.Clear(); err != nil {
-		// The prompt is already delivered, so this cannot stop anything; herdr
-		// keeps what a plugin writes here in its log.
+		// The prompt is already delivered, so this cannot stop anything; the
+		// winlog package keeps what this program writes down in its log.
 		fmt.Fprintln(os.Stderr, "trans: the sent draft could not be forgotten:", err)
 	}
 }

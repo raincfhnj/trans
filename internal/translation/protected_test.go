@@ -3,6 +3,7 @@ package translation_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"trans/internal/translation"
@@ -49,6 +50,31 @@ func TestAnInlineCodeSpanIsNeitherSentNorChanged(t *testing.T) {
 	}
 	if sent := strings.Join(service.sent(), " "); strings.Contains(sent, "berechneRabatt") {
 		t.Errorf("the function name was sent to the service: %q", sent)
+	}
+}
+
+// A span may be broken across a line break: both backticks still close it, so
+// what sits between them is code and stays out of the request.
+func TestAnInlineSpanAcrossALineBreakIsNeitherSentNorChanged(t *testing.T) {
+	t.Parallel()
+	service := &spyTranslator{}
+	translator := translation.Protecting(service)
+
+	draft := "Der Fehler liegt in `berechneRabatt\n(warenkorb)` und nirgendwo sonst."
+	translated, err := translator.Translate(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+
+	if !strings.Contains(translated, "`berechneRabatt\n(warenkorb)`") {
+		t.Errorf("the span came back as %q, want it untouched", translated)
+	}
+	sent := strings.Join(service.sent(), " ")
+	if strings.Contains(sent, "berechneRabatt") {
+		t.Errorf("the span was sent to the service: %q", sent)
+	}
+	if !strings.Contains(sent, "Der Fehler liegt") {
+		t.Errorf("the service was sent %q, want the prose around the span", sent)
 	}
 }
 
@@ -111,18 +137,124 @@ func TestAnUnfinishedCodeBlockIsProtectedToTheEnd(t *testing.T) {
 	}
 }
 
-// A lone backtick is a character someone typed, not a span to protect.
-func TestALoneBacktickIsLeftAlone(t *testing.T) {
+// A lone backtick opens a span still being typed. Until its closing one appears,
+// everything after it is held back — the same fails-closed rule an unclosed fence
+// follows — so a live preview between the two keystrokes never sends the span.
+func TestAnUnfinishedInlineSpanIsProtectedToTheEnd(t *testing.T) {
 	t.Parallel()
 	service := &spyTranslator{}
 	translator := translation.Protecting(service)
 
-	if _, err := translator.Translate(context.Background(),
-		"Das Zeichen ` steht auf der Tastatur oben links."); err != nil {
+	translated, err := translator.Translate(context.Background(),
+		"Das Zeichen ` steht auf der Tastatur oben links.")
+	if err != nil {
 		t.Fatalf("Translate returned unexpected error: %v", err)
 	}
-	if sent := strings.Join(service.sent(), " "); !strings.Contains(sent, "Tastatur") {
-		t.Errorf("the service was sent %q, want the whole sentence", sent)
+
+	if !strings.Contains(translated, "` steht auf der Tastatur oben links.") {
+		t.Errorf("the unfinished span came back as %q, want it untouched", translated)
+	}
+	sent := strings.Join(service.sent(), " ")
+	if strings.Contains(sent, "Tastatur") {
+		t.Errorf("the unfinished span was sent to the service: %q", sent)
+	}
+	if !strings.Contains(sent, "Das Zeichen") {
+		t.Errorf("the service was sent %q, want the prose before the backtick", sent)
+	}
+}
+
+// A draft can hold a fence and inline spans at once: each is taken out on its
+// own, and one protected span must not disturb the next.
+func TestFencesAndInlineSpansAreProtectedInTheSameDraft(t *testing.T) {
+	t.Parallel()
+	service := &spyTranslator{}
+	translator := translation.Protecting(service)
+
+	draft := "Erst `init()` rufen, dann:\n\n" + codeBlock + "\n\nDanach `close()` nicht vergessen."
+	translated, err := translator.Translate(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+
+	for _, kept := range []string{"`init()`", codeBlock, "`close()`"} {
+		if !strings.Contains(translated, kept) {
+			t.Errorf("the protected %q did not come back in %q", kept, translated)
+		}
+	}
+	sent := strings.Join(service.sent(), " ")
+	if strings.Contains(sent, "init()") || strings.Contains(sent, "close()") || strings.Contains(sent, "kunde") {
+		t.Errorf("code was sent to the service: %q", sent)
+	}
+	if !strings.Contains(sent, "Erst") || !strings.Contains(sent, "Danach") {
+		t.Errorf("the service was sent %q, want the prose around the code", sent)
+	}
+	if strings.Count(sent, "⟦") != 3 {
+		t.Errorf("the service was sent %q, want a marker for each of the three spans", sent)
+	}
+}
+
+// There is nothing to protect in an empty or blank draft, and no marker may
+// appear where the draft went through untouched.
+func TestAnEmptyOrBlankDraftGoesThroughWithoutAMarker(t *testing.T) {
+	t.Parallel()
+
+	for _, draft := range []string{"", "   ", "\n\n\t "} {
+		service := &spyTranslator{}
+		translated, err := translation.Protecting(service).Translate(context.Background(), draft)
+		if err != nil {
+			t.Fatalf("Translate(%q) returned unexpected error: %v", draft, err)
+		}
+		if sent := service.sent(); len(sent) != 1 || sent[0] != draft {
+			t.Errorf("Translate(%q) sent %q, want the draft itself", draft, sent)
+		}
+		if strings.Contains(translated, "⟦") {
+			t.Errorf("Translate(%q) returned %q, want no marker for a blank draft", draft, translated)
+		}
+	}
+}
+
+// An echo answers with exactly what it was given, so a draft must come back
+// byte for byte: whatever takeOut removes, putBack restores.
+type echoTranslator struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (e *echoTranslator) Translate(_ context.Context, text string) (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.got = append(e.got, text)
+	return text, nil
+}
+
+func TestTakingOutAndPuttingBackIsTheIdentityOnTheDraft(t *testing.T) {
+	t.Parallel()
+
+	for _, draft := range []string{
+		"",
+		"   \n\t",
+		"Bitte behebe den Test.",
+		"Schreibe `berechneRabatt(warenkorb, prozent)` bitte.",
+		"Der Fehler liegt in `berechneRabatt\n(warenkorb)` und nirgendwo sonst.",
+		"Das Zeichen ` steht auf der Tastatur oben links.",
+		"Hier der Fehler:\n\n```go\nif kunde == nil {",
+		"Erst `init()` rufen, dann:\n\n" + codeBlock + "\n\nDanach `close()`.",
+		"Die Notation ⟦0⟧ kommt aus der Mathematik.",
+	} {
+		echo := &echoTranslator{}
+		translated, err := translation.Protecting(echo).
+			Translate(context.Background(), draft)
+		if err != nil {
+			t.Errorf("Translate(%q) returned unexpected error: %v", draft, err)
+			continue
+		}
+		if translated != draft {
+			t.Errorf("Translate(%q) returned %q, want the draft exactly as it was", draft, translated)
+		}
+		// The identity is only worth anything if something really was taken out.
+		if len(echo.got) == 1 && echo.got[0] == draft && strings.Contains(draft, "`") {
+			t.Errorf("Translate(%q) was sent verbatim, want it marked over the code", draft)
+		}
 	}
 }
 

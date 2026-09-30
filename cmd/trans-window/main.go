@@ -244,7 +244,7 @@ func runSettings(arguments []string) error {
 	if err != nil {
 		return err
 	}
-	options := windowSettings(cfg)
+	options := windowSettings(&cfg)
 	return openOver("settings", "", "", settings.PopupWidth, settings.PopupHeight(options))
 }
 
@@ -278,9 +278,9 @@ func runPanel() error {
 			window = win32.Window{}
 		}
 		if mode == "select" {
-			return selectionWindow(window, cfg)
+			return selectionWindow(window, &cfg)
 		}
-		return settingsWindow(window, cfg)
+		return settingsWindow(window, &cfg)
 	}
 
 	window, err := win32.Resolve(win32.ParseTarget(cfg.Target))
@@ -449,10 +449,10 @@ func placeOver(window win32.Window, width, height int) {
 // selectionWindow draws the selection and its translation. The text was read
 // by the process the chord woke and arrives through the environment, so what
 // is left here is the service to ask and the window to ask it in.
-func selectionWindow(window win32.Window, cfg config.Settings) error {
+func selectionWindow(window win32.Window, cfg *config.Settings) error {
 	placeOver(window, selection.PopupWidth, selection.PopupHeight())
 
-	chosen := service.Choose(&cfg)
+	chosen := service.Choose(cfg)
 	trouble := chosen.Trouble
 	// The selection did not come to hand: that is what the window has to say,
 	// rather than the state of a service that was never reached.
@@ -479,7 +479,7 @@ func selectionWindow(window win32.Window, cfg config.Settings) error {
 // settingsWindow draws the settings over the pane they were called up in.
 // There is no service to ask and nothing to send: the window reads what the
 // settings are and writes the file they live in.
-func settingsWindow(window win32.Window, cfg config.Settings) error {
+func settingsWindow(window win32.Window, cfg *config.Settings) error {
 	options := windowSettings(cfg)
 	placeOver(window, settings.PopupWidth, settings.PopupHeight(options))
 
@@ -491,9 +491,9 @@ func settingsWindow(window win32.Window, cfg config.Settings) error {
 // windowSettings is what the settings window opens on: these settings as they
 // are read in this process, every service the registry knows to step through,
 // and the real key parsing for the chords it would write.
-func windowSettings(cfg config.Settings) settings.Options {
+func windowSettings(cfg *config.Settings) settings.Options {
 	return settings.Options{
-		Settings: cfg,
+		Settings: *cfg,
 		Getenv:   os.Getenv,
 		Services: service.Registry().Names(),
 		Chord: func(spec string) error {

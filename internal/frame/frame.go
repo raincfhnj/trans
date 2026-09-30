@@ -36,6 +36,9 @@ const (
 )
 
 // Foregrounds only: a cell left alone keeps the background the terminal painted.
+// The two box styles are named rather than kept whole: a Styles carries every
+// style at once, and a method that takes it by value would copy the lot on each
+// call — which the linter counts, and which the calls in a redraw do often.
 type Styles struct {
 	Text        lipgloss.Style
 	Placeholder lipgloss.Style
@@ -51,9 +54,6 @@ type Styles struct {
 	// faded out.
 	Off  lipgloss.Style
 	Mark lipgloss.Style
-
-	ActiveBox lipgloss.Style
-	IdleBox   lipgloss.Style
 }
 
 func NewStyles() Styles {
@@ -74,31 +74,42 @@ func NewStyles() Styles {
 		Mark:        lipgloss.NewStyle().Foreground(grey),
 
 		// The accented border marks the box being written in or read; the other
-		// one recedes into the frame's grey.
-		ActiveBox: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(accent).
-			Padding(0, 1),
-		IdleBox: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(grey).
-			Padding(0, 1),
+		// one recedes into the frame's grey. They are returned by NewStyles as
+		// they are not part of the palette a window keeps.
 	}
 }
 
+// ActiveBox is the border of the box being written in or read.
+func ActiveBox() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(accent).
+		Padding(0, 1)
+}
+
+// IdleBox is the border of the box that is not being read.
+func IdleBox() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(grey).
+		Padding(0, 1)
+}
+
 // Box is a box the width of the popup, accented while it is the one being
-// written in or read.
-func (s Styles) Box(active bool, width int) lipgloss.Style {
+// written in or read. The border styles are built here rather than carried in
+// Styles: Styles is copied on every call that takes it, and two more lipgloss
+// styles in it are two more copies a redraw would pay for.
+func Box(active bool, width int) lipgloss.Style {
 	if active {
-		return s.ActiveBox.Width(width)
+		return ActiveBox().Width(width)
 	}
-	return s.IdleBox.Width(width)
+	return IdleBox().Width(width)
 }
 
 // Labelled writes a word into the bottom border, near the right corner, where
 // a box has room for it and nothing else is drawn. The border is one colour,
 // so the line is rebuilt from its characters rather than picked apart.
-func (s Styles) Labelled(box, label string, active bool) string {
+func Labelled(border, badge *lipgloss.Style, box, label string, active bool) string {
 	if label == "" {
 		return box
 	}
@@ -113,13 +124,12 @@ func (s Styles) Labelled(box, label string, active bool) string {
 		return box
 	}
 
-	border := s.Mark
 	if active {
-		border = s.Accent
+		border = badge
 	}
 	at := len(runes) - margin - lipgloss.Width(label)
 	lines[len(lines)-1] = border.Render(string(runes[:at])) +
-		s.Badge.Render(label) +
+		badge.Render(label) +
 		border.Render(string(runes[at+lipgloss.Width(label):]))
 	return strings.Join(lines, "\n")
 }

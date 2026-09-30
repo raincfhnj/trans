@@ -14,8 +14,10 @@ func ContentWidth(width int) int {
 }
 
 // Scrolled draws the bar beside text that does not fit, telling where the
-// view sits in it.
-func (s Styles) Scrolled(contentWidth int, body string, first, visible, total int) string {
+// view sits in it. It reads the two colours off the palette rather than
+// carrying Styles by value: a copy of the whole palette per row would be the
+// expensive way to colour a bar.
+func Scrolled(palette *Styles, contentWidth int, body string, first, visible, total int) string {
 	lines := strings.Split(body, "\n")
 	if total <= visible || len(lines) == 0 {
 		return body
@@ -34,9 +36,9 @@ func (s Styles) Scrolled(contentWidth int, body string, first, visible, total in
 
 	for index, row := range lines {
 		// The thumb is read, the track only tells it where it can go.
-		mark := s.Mark.Render(ScrollTrack)
+		mark := palette.Mark.Render(ScrollTrack)
 		if index >= top && index < top+height {
-			mark = s.Accent.Render(ScrollThumb)
+			mark = palette.Accent.Render(ScrollThumb)
 		}
 		// Padded first: a bar is a column, not something that follows the text.
 		lines[index] = row + strings.Repeat(" ",

@@ -253,20 +253,20 @@ func flip(value string) string {
 }
 
 func (m Model) editingKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Type == tea.KeyCtrlC:
+	switch key.Type {
+	case tea.KeyCtrlC:
 		return m, tea.Quit
 
-	case key.Type == tea.KeyEnter:
+	case tea.KeyEnter:
 		next := m.committed()
 		return next, nil
 
-	case key.Type == tea.KeyEsc:
+	case tea.KeyEsc:
 		m.editing = -1
 		m.input.Blur()
 		return m, nil
 
-	case key.Type == tea.KeyCtrlS:
+	case tea.KeyCtrlS:
 		// The value under the cursor is the one being saved, so the writing is
 		// put away first and then the save runs.
 		next := m.committed()

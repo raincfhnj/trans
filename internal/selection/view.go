@@ -12,17 +12,17 @@ func (m Model) View() string {
 	selectedRows, translationRows := m.rows()
 	content := m.contentWidth()
 
-	selected := m.styles.Labelled(
-		m.styles.Box(false, m.pane.Width).Height(selectedRows).
+	selected := frame.Labelled(&m.styles.Mark, &m.styles.Badge,
+		frame.Box(false, m.pane.Width).Height(selectedRows).
 			Render(m.sourceBody(content, selectedRows)),
 		"selection", false)
 
 	text, style := m.translation()
 	total := frame.RowsOf(text, content)
 	body := style.Render(frame.RowsFrom(text, content, m.first, translationRows))
-	translation := m.styles.Labelled(
-		m.styles.Box(true, m.pane.Width).Height(translationRows).Render(
-			m.styles.Scrolled(content, body, m.first, translationRows, total)),
+	translation := frame.Labelled(&m.styles.Mark, &m.styles.Badge,
+		frame.Box(true, m.pane.Width).Height(translationRows).Render(
+			frame.Scrolled(&m.styles, content, body, m.first, translationRows, total)),
 		frame.HowFarThrough(m.first, translationRows, total), true)
 
 	line := lipgloss.Width(translation)

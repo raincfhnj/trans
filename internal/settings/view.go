@@ -19,9 +19,10 @@ func (m Model) View() string {
 		listed = append(listed, m.rowLine(m.rows[index], index))
 	}
 
-	box := m.styles.Box(true, m.pane.Width).Height(visible).
+	box := frame.Box(true, m.pane.Width).Height(visible).
 		Render(strings.Join(listed, "\n"))
-	box = m.styles.Labelled(box, frame.HowFarThrough(m.top, visible, len(m.rows)), true)
+	box = frame.Labelled(&m.styles.Mark, &m.styles.Badge, box,
+		frame.HowFarThrough(m.top, visible, len(m.rows)), true)
 	line := lipgloss.Width(box)
 
 	return strings.Join([]string{m.header(line), box, m.footer(line)}, "\n")

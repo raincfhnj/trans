@@ -145,11 +145,12 @@ func write(file, content string) error {
 	defer os.Remove(fresh.Name()) // harmless after the rename, a way out before it
 
 	if err := fresh.Chmod(0o600); err != nil {
-		fresh.Close()
+		// Closing here can only fail because the file is going away anyway.
+		_ = fresh.Close()
 		return fmt.Errorf("keeping %s private: %w", file, err)
 	}
 	if _, err := fresh.WriteString(content); err != nil {
-		fresh.Close()
+		_ = fresh.Close()
 		return fmt.Errorf("writing %s: %w", file, err)
 	}
 	if err := fresh.Close(); err != nil {

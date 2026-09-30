@@ -42,8 +42,8 @@ func TestTheLabelIsWrittenIntoTheBottomBorder(t *testing.T) {
 	t.Parallel()
 	styles := frame.NewStyles()
 
-	box := styles.Box(true, 40).Render("the writing")
-	labelled := styles.Labelled(box, "45%", true)
+	box := frame.Box(true, 40).Render("the writing")
+	labelled := frame.Labelled(&styles.Mark, &styles.Badge, box, "45%", true)
 
 	border := strings.Split(labelled, "\n")
 	if !strings.Contains(border[len(border)-1], "45%") {
@@ -58,8 +58,8 @@ func TestALabelThatDoesNotFitIsLeftOut(t *testing.T) {
 	t.Parallel()
 	styles := frame.NewStyles()
 
-	box := styles.Box(true, 14).Render("text")
-	if labelled := styles.Labelled(box, "a-label-far-too-long", true); labelled != box {
+	box := frame.Box(true, 14).Render("text")
+	if labelled := frame.Labelled(&styles.Mark, &styles.Badge, box, "a-label-far-too-long", true); labelled != box {
 		t.Errorf("the box is %q, want it untouched by a label without room", labelled)
 	}
 }
@@ -69,7 +69,7 @@ func TestTheBarTellsWhereTheViewSits(t *testing.T) {
 	styles := frame.NewStyles()
 	body := strings.Repeat("a line of text\n", 20)
 
-	shown := styles.Scrolled(30, strings.TrimSuffix(body, "\n"), 0, 5, 20)
+	shown := frame.Scrolled(&styles, 30, strings.TrimSuffix(body, "\n"), 0, 5, 20)
 
 	if !strings.Contains(shown, frame.ScrollThumb) {
 		t.Error("the view sits in text that does not fit, want a thumb to show where")
@@ -91,7 +91,7 @@ func TestTextThatFitsHasNoBar(t *testing.T) {
 	styles := frame.NewStyles()
 
 	body := "one line\nand another"
-	shown := styles.Scrolled(30, body, 0, 5, 2)
+	shown := frame.Scrolled(&styles, 30, body, 0, 5, 2)
 	if shown != body {
 		t.Errorf("Scrolled drew %q, want the text left as it stands", shown)
 	}

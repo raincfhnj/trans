@@ -404,7 +404,7 @@ func commandLineFor(program string, arguments []string) string {
 // daemon can wait for the panel's chord, the selection's and the settings
 // window's at the same time and say which was pressed. The id travels with the
 // key press and no id is claimed twice.
-func RegisterHotkey(id uint32, modifiers, key uint32) error {
+func RegisterHotkey(id, modifiers, key uint32) error {
 	if call(procRegisterHotKey, 0, uintptr(id), uintptr(modifiers|modNoRepeat), uintptr(key)) == 0 {
 		return lastError("RegisterHotKey")
 	}

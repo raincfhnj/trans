@@ -25,7 +25,7 @@ type fake struct {
 	hasSpeech bool
 }
 
-func (f fake) options() setup.Options {
+func (f *fake) options() setup.Options {
 	choose := func(*config.Settings) service.Choice { return f.choice }
 	return setup.Options{
 		Getenv: func(key string) string { return f.env[key] },
@@ -77,13 +77,13 @@ func TestReportKeepsEveryCheckAndCountsThem(t *testing.T) {
 	t.Parallel()
 
 	file := aSettingsFile(t, "TRANS_PROVIDER=gtranslate\n")
-	report := setup.Doctor(fake{
+	report := setup.Doctor((&fake{
 		settings:  config.Settings{ConfigFile: file},
 		choice:    service.Choice{Name: "gtranslate", Translates: true},
 		onPath:    map[string]string{"go": `C:\go\bin\go.exe`},
 		speech:    "Microsoft Zira Desktop",
 		hasSpeech: true,
-	}.options())
+	}).options())
 
 	if len(report.Checks) != 5 {
 		t.Fatalf("got %d checks, want 5: %+v", len(report.Checks), report.Checks)
@@ -106,10 +106,10 @@ func TestGoToolchainIsWarnedAboutRatherThanFailed(t *testing.T) {
 	t.Parallel()
 
 	file := aSettingsFile(t, "")
-	report := setup.Doctor(fake{
+	report := setup.Doctor((&fake{
 		settings: config.Settings{ConfigFile: file},
 		choice:   service.Choice{Name: "off", Translates: false},
-	}.options())
+	}).options())
 
 	check := checkNamed(t, report, "go toolchain")
 	if check.Verdict != setup.Warn {
@@ -129,10 +129,10 @@ func TestSettingsCheckFollowsPrepareAndLoad(t *testing.T) {
 	t.Run("a readable file passes with its size", func(t *testing.T) {
 		t.Parallel()
 		file := aSettingsFile(t, "TRANS_PROVIDER=gtranslate\n")
-		report := setup.Doctor(fake{
+		report := setup.Doctor((&fake{
 			settings: config.Settings{ConfigFile: file},
 			choice:   service.Choice{Name: "gtranslate", Translates: true},
-		}.options())
+		}).options())
 
 		check := checkNamed(t, report, "settings")
 		if check.Verdict != setup.Pass {
@@ -148,9 +148,9 @@ func TestSettingsCheckFollowsPrepareAndLoad(t *testing.T) {
 
 	t.Run("no config directory is a warning", func(t *testing.T) {
 		t.Parallel()
-		report := setup.Doctor(fake{
+		report := setup.Doctor((&fake{
 			choice: service.Choice{Name: "off", Translates: false},
-		}.options())
+		}).options())
 
 		check := checkNamed(t, report, "settings")
 		if check.Verdict != setup.Warn {
@@ -163,9 +163,9 @@ func TestSettingsCheckFollowsPrepareAndLoad(t *testing.T) {
 
 	t.Run("settings that cannot be read fail with what to correct", func(t *testing.T) {
 		t.Parallel()
-		report := setup.Doctor(fake{
+		report := setup.Doctor((&fake{
 			loadErr: errors.New(`TRANS_SUBMIT is "maybe", which is neither on nor off`),
-		}.options())
+		}).options())
 
 		check := checkNamed(t, report, "settings")
 		if check.Verdict != setup.Fail {
@@ -243,10 +243,10 @@ func TestProviderKeyIsReportedWithoutBeingPrinted(t *testing.T) {
 			settings := config.Settings{Provider: test.provider, ConfigFile: file}
 			settings.Options.APIKey = test.key
 
-			report := setup.Doctor(fake{
+			report := setup.Doctor((&fake{
 				settings: settings,
 				choice:   test.choice,
-			}.options())
+			}).options())
 
 			check := checkNamed(t, report, "provider key")
 			if check.Verdict != test.verdict {

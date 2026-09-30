@@ -100,7 +100,7 @@ func configuration(options Options) Check {
 	return Check{
 		Name:    name,
 		Verdict: Warn,
-		Detail:  fmt.Sprintf("no settings file yet at %s", file),
+		Detail:  "no settings file yet at " + file,
 		Fix:     "run the panel once, or write the settings there by hand",
 	}
 }
@@ -133,7 +133,7 @@ func credentials(options Options) Check {
 			Name:    name,
 			Verdict: Fail,
 			Detail:  chosen.Trouble.Error(),
-			Fix:     fmt.Sprintf("set the service or its key in %s", settings.ConfigFile),
+			Fix:     "set the service or its key in " + settings.ConfigFile,
 		}
 	}
 	if !chosen.Translates {
@@ -152,7 +152,7 @@ func credentials(options Options) Check {
 		return Check{
 			Name:    name,
 			Verdict: Pass,
-			Detail:  fmt.Sprintf("%s is chosen and needs no key", chosen.Name),
+			Detail:  chosen.Name + " is chosen and needs no key",
 		}
 	}
 	return Check{
@@ -216,7 +216,7 @@ func speech(options Options) Check {
 		return Check{
 			Name:    name,
 			Verdict: Warn,
-			Detail:  fmt.Sprintf("speech synthesis was not checked on %s", options.Operating),
+			Detail:  "speech synthesis was not checked on " + options.Operating,
 			Fix:     "the panel itself speaks no audio; Windows SAPI voices are optional",
 		}
 	}

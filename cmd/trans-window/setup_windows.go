@@ -3,8 +3,10 @@
 package main
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // execLookPathImpl is the real PATH lookup on Windows.
@@ -17,7 +19,12 @@ func execLookPathImpl(file string) (string, error) {
 // without taking a dependency on it. The answer is only ever a name; when
 // PowerShell is missing or slow the caller reports that instead.
 func speechCheck() (string, bool) {
-	command := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+	// PowerShell under a profile it does not need, with a deadline: the
+	// doctor must never hang on a machine where the voice registry is being
+	// repaired or the profile is broken.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command",
 		"(Get-ChildItem 'HKLM:\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens' | Select-Object -First 1).PSChildName")
 	output, err := command.Output()
 	if err != nil {

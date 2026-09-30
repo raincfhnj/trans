@@ -52,11 +52,11 @@ func TestProgramsOnPathAreWarnedAboutRatherThanFailed(t *testing.T) {
 			t.Parallel()
 
 			file := aSettingsFile(t, "")
-			report := setup.Doctor(fake{
+			report := setup.Doctor((&fake{
 				settings: config.Settings{ConfigFile: file},
 				choice:   service.Choice{Name: "off", Translates: false},
 				onPath:   test.onPath,
-			}.options())
+			}).options())
 
 			check := checkNamed(t, report, "programs on PATH")
 			if check.Verdict != test.verdict {
@@ -117,12 +117,12 @@ func TestSpeechIsBestEffortAndNeverFails(t *testing.T) {
 			t.Parallel()
 
 			file := aSettingsFile(t, "")
-			options := fake{
+			options := (&fake{
 				settings:  config.Settings{ConfigFile: file},
 				choice:    service.Choice{Name: "off", Translates: false},
 				speech:    test.speech,
 				hasSpeech: test.hasSpeech,
-			}.options()
+			}).options()
 			if !test.asked {
 				options.Speech = nil
 			}

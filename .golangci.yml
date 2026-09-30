@@ -40,7 +40,7 @@ linters:
           - unparam
       # Win32 hands pointers back as numbers, and there is no way to read what
       # they point at without unsafe.
-      - path: internal/win32/
+      - path: internal/(win32|tray)/
         linters:
           - gosec
           - govet
@@ -75,7 +75,7 @@ linters:
       # coordinates are int32 and may legitimately be negative on a
       # multi-monitor setup — clamping would be wrong — while thread ids and
       # pointer-sized handles are uint32/uintptr.
-      - path: internal/win32/
+      - path: internal/(win32|tray)/
         linters:
           - gosec
         text: G115

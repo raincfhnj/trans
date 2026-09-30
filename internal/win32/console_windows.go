@@ -411,19 +411,91 @@ func RegisterHotkey(id, modifiers, key uint32) error {
 	return nil
 }
 
-// WaitForHotkey blocks until a claimed hotkey is pressed and answers with the
-// id it was registered under, or 0 when the program is being shut down.
-func WaitForHotkey() uint32 {
+// ClosePanels asks every window the panel gave itself a name to close, and
+// answers how many were asked. There is no panel process to toggle — one is
+// spawned for each press and ends when its window does — so "close the panel"
+// is this: find the windows that said what they are and tell them to go.
+func ClosePanels() int {
+	asked := 0
+	for _, window := range Windows() {
+		if !strings.HasPrefix(window.Title, PanelTitle) {
+			continue
+		}
+		if call(procPostMessageW, window.Handle, wmClose, 0, 0) != 0 {
+			asked++
+		}
+	}
+	return asked
+}
+
+// UnregisterHotkey lets a claimed combination go, so the daemon can claim a
+// new one without restarting. The hotkeys belong to the thread that claimed
+// them, so this is called from the loop that waits for them.
+func UnregisterHotkey(id uint32) error {
+	if call(procUnregisterHotKey, 0, uintptr(id)) == 0 {
+		return lastError("UnregisterHotKey")
+	}
+	return nil
+}
+
+// CurrentThreadID names the thread a message queue belongs to. The daemon
+// hands it to the tray, which is on a thread of its own and can only ask this
+// thread to do something by posting to it.
+func CurrentThreadID() uint32 {
+	return uint32(call(procGetCurrentThreadId))
+}
+
+// Command is what the waiting loop was woken for.
+type Command int
+
+const (
+	// CommandHotkey is a claimed combination that was pressed; the id says
+	// which one.
+	CommandHotkey Command = iota
+	// CommandReload asks the loop to read the settings and claim the chords
+	// again — what the tray's reload item does.
+	CommandReload
+	// CommandQuit asks the program to end, what closing the window does.
+	CommandQuit
+)
+
+// WaitForCommand blocks until something the daemon cares about arrives: a
+// claimed hotkey, a reload asked for by another thread, or the end of the
+// program. Only messages this program posts to itself reach it.
+func WaitForCommand() (command Command, id uint32) {
 	message := message{}
 	for {
 		result := call(procGetMessageW, uintptr(unsafe.Pointer(&message)), 0, 0, 0)
 		switch {
 		case result == 0, result == ^uintptr(0):
-			return 0
+			return CommandQuit, 0
 		case message.Message == wmHotkey:
-			return uint32(message.WParam)
+			return CommandHotkey, uint32(message.WParam)
+		case message.Message == wmReload:
+			return CommandReload, 0
 		}
 	}
+}
+
+// PostReload asks the thread that owns the hotkeys to read the settings and
+// claim them again. RegisterHotKey is thread-affine — a chord cannot be
+// released from anywhere but the thread that claimed it — so the tray only
+// sends the request.
+func PostReload(thread uint32) error {
+	return postThreadMessage(thread, wmReload)
+}
+
+// PostQuit asks a thread's message loop to end, which is how one window ends
+// a program whose other half is a loop somewhere else.
+func PostQuit(thread uint32) error {
+	return postThreadMessage(thread, wmQuit)
+}
+
+func postThreadMessage(thread, kind uint32) error {
+	if call(procPostThreadMessage, uintptr(thread), uintptr(kind), 0, 0) == 0 {
+		return lastError("PostThreadMessage")
+	}
+	return nil
 }
 
 // Keys translates a hotkey written the way a person writes one. The letters and

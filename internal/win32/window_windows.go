@@ -38,6 +38,7 @@ var (
 	procGetClipboardData       = user32.NewProc("GetClipboardData")
 	procKeybdEvent             = user32.NewProc("keybd_event")
 	procRegisterHotKey         = user32.NewProc("RegisterHotKey")
+	procUnregisterHotKey       = user32.NewProc("UnregisterHotKey")
 	procGetMessageW            = user32.NewProc("GetMessageW")
 
 	procGetConsoleWindow       = kernel32.NewProc("GetConsoleWindow")
@@ -51,6 +52,8 @@ var (
 	procSetConsoleWindowInfo   = kernel32.NewProc("SetConsoleWindowInfo")
 	procSetConsoleTitle        = kernel32.NewProc("SetConsoleTitleW")
 	procCloseHandle            = kernel32.NewProc("CloseHandle")
+	procPostThreadMessage      = user32.NewProc("PostThreadMessageW")
+	procPostMessageW           = user32.NewProc("PostMessageW")
 )
 
 // call runs one Win32 function and returns its result. Anything other than a
@@ -98,7 +101,13 @@ const (
 
 	swRestore = 9
 
+	wmClose  = 0x0010
 	wmHotkey = 0x0312
+	// wmReload and wmQuit are the two messages this program posts to itself:
+	// one asks the chord loop to read its settings again, the other ends it.
+	// They sit in the range Windows leaves to applications.
+	wmReload = 0x8000 + 1
+	wmQuit   = 0x0012
 
 	modAlt                   = 0x0001
 	modControl               = 0x0002

@@ -66,6 +66,21 @@ type Options struct {
 	// pre-edit text where the writing is instead of at the foot of the panel;
 	// only a console the console host draws can be moved that way.
 	Cursor *CursorPlace
+	// Read turns the panel around: the draft holds text to read — an agent's
+	// reply, an error, anything already in English — and the second pane shows
+	// it in the author's own language, which Language then names. Nothing is
+	// delivered into the window; the key that sends elsewhere copies the result
+	// to the clipboard.
+	Read bool
+	// Prefill opens with text already in the draft: what was on the clipboard,
+	// or a selection captured from the window. It arrived rather than being
+	// written, but unlike a draft from an earlier session it is exactly what
+	// the panel was opened for, so live translation takes it up at once.
+	Prefill string
+	// PrefillTrouble is why there is nothing to start with when something was
+	// asked for and did not come — a capture that found nothing, a chord that
+	// would not press — said out loud as soon as the popup opens, like Trouble.
+	PrefillTrouble error
 }
 
 // CursorPlace is a cell of the frame just drawn, counted the way a terminal
@@ -228,9 +243,21 @@ type Model struct {
 func New(ctx context.Context, prompter Prompter, options Options) Model {
 	look := newStyles()
 
+	// Read mode keeps nothing: the text came from somewhere else, a reply to
+	// read is not a prompt being written, and copying twice costs nothing — so
+	// there is no store to save to and nothing to confirm before the copy.
+	if options.Read {
+		options.Drafts = nil
+		options.Confirm = false
+	}
+
+	placeholder := "Write your prompt in your own language …"
+	if options.Read {
+		placeholder = "Paste or write what you want to read …"
+	}
 	draft := vimarea.New(
 		vimarea.WithVim(options.Vim),
-		vimarea.WithPlaceholder("Write your prompt in your own language …"),
+		vimarea.WithPlaceholder(placeholder),
 		vimarea.WithStyles(look.text, look.placeholder, look.cursorFor(options.Cursor)),
 	)
 	draft.SetHeight(draftHeight)
@@ -275,6 +302,11 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 			model.resize(maxContentWidth)
 		}
 	}
+	// Text that arrived rather than being written still does not mark the box:
+	// it is what the panel was opened for, not yesterday's thinking.
+	if options.Prefill != "" {
+		model.draft.Resume(options.Prefill)
+	}
 	return model
 }
 
@@ -315,6 +347,15 @@ func (m Model) Init() tea.Cmd {
 	if m.heldBackLive {
 		started = append(started, hint("resumed draft, so live is off — ctrl+l translates it"))
 	}
+	if m.options.PrefillTrouble != nil {
+		started = append(started, refuse(m.options.PrefillTrouble))
+	}
+	// Prefilled text is there to be read, so live translation takes it up at
+	// once rather than waiting for an edit. A wall of it is the exception this
+	// box has always made: too long to translate is too long however it came.
+	if m.options.Prefill != "" && m.options.Live && !m.draftIsTooLong() {
+		started = append(started, m.schedulePreview())
+	}
 	return tea.Batch(started...)
 }
 
@@ -351,6 +392,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, beating
 
 	case promptSentMsg:
+		// Read mode copies instead of delivering. The draft and the result stay
+		// where they are — one copy may go to more than one place — and the way
+		// out is what is said.
+		if m.options.Read {
+			m.stage = composing
+			return m, hint("copied to clipboard · esc closes")
+		}
 		m.delivered = true
 		m.forgetDraft()
 		// Neither way of delivering closes the panel: a sent prompt and one that
@@ -580,6 +628,14 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case m.reading:
 		return m.readKey(key)
+
+	// Escape closes a read-mode panel whatever is on screen: the text came from
+	// somewhere else, nothing here is kept for next time, and the notice says
+	// so. Leaving an edit mode is the one exception — a vim author's fingers
+	// expect escape out of insert before anything else.
+	case m.options.Read && key.Type == tea.KeyEsc &&
+		(!m.draft.Modal() || m.draft.Mode() == vimarea.Normal):
+		return m.close()
 
 	// Escape takes the message away. It must not also close the popup.
 	case key.Type == tea.KeyEsc && (m.notice != nil || m.hint != ""):

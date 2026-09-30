@@ -135,15 +135,25 @@ func (m Model) header(line int) string {
 // The badge is joined from rendered pieces: the pulse carries its own colour,
 // which a single Render around everything would cut short.
 func (m Model) badge() string {
-	if !m.translating() {
-		return m.styles.badge.Render("no translation · " + m.whatHappens())
+	// Read mode says so first: the rest of the heading — which language, which
+	// key — reads differently there, and this is the word that says why.
+	way := []string{}
+	if m.options.Read {
+		way = []string{m.styles.badge.Render("read"), m.styles.badge.Render("·")}
 	}
 
-	pieces := []string{m.styles.badge.Render(m.options.Service + " → " + m.options.Language)}
+	if !m.translating() {
+		return strings.Join(append(way,
+			m.styles.badge.Render("no translation · "+m.whatHappens())),
+			m.styles.badge.Render(" "))
+	}
 
-	// A glyph and the word, always the same width, so switching live translation
-	// on or off does not shift everything after it along the line.
+	pieces := way
+	// A glyph and the word follow the language, always the same width, so
+	// switching live translation on or off does not shift everything after it
+	// along the line.
 	pieces = append(pieces,
+		m.styles.badge.Render(m.options.Service+" → "+m.options.Language),
 		m.styles.badge.Render("·"),
 		m.liveState(),
 		m.styles.badge.Render("· "+m.whatHappens()),
@@ -173,29 +183,47 @@ func (m Model) liveState() string {
 	return m.styles.badge.Render("✘") + m.styles.off.Render(" live")
 }
 
+// outcome is what the key that hands the text over does, named twice: in the
+// words the heading has room for, and in the one word the footer has room for.
+// Read mode copies instead of delivering, and where there is no other way to
+// choose — there choosing stops — the second name stays empty.
+type outcome struct {
+	words string
+	word  string
+	other string
+}
+
+func (m Model) sendKeyDoes() outcome {
+	switch {
+	case m.options.Read:
+		return outcome{words: "copies to clipboard", word: "copy"}
+	case m.delivery == promptflow.Typing:
+		return outcome{words: "fills the input", word: "fill", other: "send"}
+	default:
+		return outcome{words: "sends to agent", word: "send", other: "fill"}
+	}
+}
+
 // The heading has room to say what will happen in words; the footer, which has
 // to hold every key, names the same thing in one. Both readings are padded to
 // one width so switching between them moves nothing.
 func (m Model) whatHappens() string {
 	const widest = len("fills the input")
-	if m.delivery == promptflow.Typing {
-		return "fills the input"
-	}
-	return fmt.Sprintf("%-*s", widest, "sends to agent")
+	return fmt.Sprintf("%-*s", widest, m.sendKeyDoes().words)
 }
 
-func (m Model) destination() string {
-	if m.delivery == promptflow.Typing {
-		return "fill"
-	}
-	return "send"
-}
+func (m Model) destination() string { return m.sendKeyDoes().word }
 
-func (m Model) otherDestination() string {
-	if m.delivery == promptflow.Typing {
-		return "send"
+func (m Model) otherDestination() string { return m.sendKeyDoes().other }
+
+// escapeSays is what the footer promises escape does while a message is up. It
+// takes the message away in a panel that keeps its draft; read mode keeps
+// nothing for next time, so escape is the way out there and the footer says so.
+func (m Model) escapeSays(action string) string {
+	if m.options.Read {
+		action = "close"
 	}
-	return "fill"
+	return m.styles.key.Render("esc") + m.styles.hint.Render(" "+action)
 }
 
 // The mode sits at the end of the line, next to the key that changes it.
@@ -214,10 +242,15 @@ func (m Model) footer(line int) string {
 			m.styles.hint.Render("ctrl+c close"), inner)
 	case m.notice != nil:
 		return spread(" "+m.styles.danger.Render("✗ "+m.notice.Error()),
-			m.styles.key.Render("esc")+m.styles.hint.Render(" dismiss"), inner)
+			m.escapeSays("dismiss"), inner)
 	case m.hint != "":
-		return spread(" "+m.styles.badge.Render(m.hint),
-			m.styles.key.Render("esc")+m.styles.hint.Render(" dismiss"), inner)
+		// A read-mode hint says how to leave in its own words, so the side of
+		// the line stays empty rather than repeating them.
+		side := m.escapeSays("dismiss")
+		if m.options.Read {
+			side = ""
+		}
+		return spread(" "+m.styles.badge.Render(m.hint), side, inner)
 	case m.draftIsTooLong():
 		return spread(
 			" "+m.styles.danger.Render(fmt.Sprintf("⚠ %d characters", len([]rune(m.draft.Value()))))+
@@ -260,11 +293,16 @@ func (m Model) keyHints(room int) string {
 		if m.translationIsCut() {
 			shown = append(shown, [2]string{"tab", "read it"})
 		}
-		shown = append(shown,
-			[2]string{"ctrl+r", "→ " + m.otherDestination()},
-			[2]string{"ctrl+l", "live"})
-	} else {
-		shown = append(shown, [2]string{"ctrl+r", "→ " + m.otherDestination()})
+	}
+
+	// Choosing between sending and filling is a question where something is
+	// delivered. Read mode copies — the front of the footer already says so —
+	// and has no second way to switch to.
+	if other := m.otherDestination(); other != "" {
+		shown = append(shown, [2]string{"ctrl+r", "→ " + other})
+	}
+	if m.translating() {
+		shown = append(shown, [2]string{"ctrl+l", "live"})
 	}
 
 	// An arrow reads as "takes you to", which a bare mode name does not.

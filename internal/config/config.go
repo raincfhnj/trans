@@ -54,6 +54,22 @@ const (
 	defaultConfigHotkey = "ctrl+alt+c"
 )
 
+// The other half of the panel — reading English that is already there instead
+// of writing a prompt — has settings of its own, kept in one block so the two
+// halves can grow without writing in each other's lines.
+const (
+	// The language text read in read mode comes back in, whatever language the
+	// prompts themselves are written in.
+	readLanguageVar = "TRANS_READ_LANGUAGE"
+	// The chord that copies a selection out of the target window before the
+	// panel covers it. Parsed the way a paste chord is, and only pressed when
+	// a capture was actually asked for.
+	captureKeysVar = "TRANS_CAPTURE_KEYS"
+
+	defaultReadLanguage = "ZH"
+	defaultCaptureKeys  = "ctrl+shift+c"
+)
+
 type Settings struct {
 	Target string
 	// Provider names the translation service; empty means the default.
@@ -83,6 +99,13 @@ type Settings struct {
 	// read from the clipboard. Empty reads the clipboard as it stands, which is
 	// what a terminal that copies on selection has already filled.
 	SelectCopy string
+	// ReadLanguage is the language text read in read mode is translated into.
+	// It stands beside Options.TargetLanguage rather than in it: a normal panel
+	// translates into the one, a read panel into the other.
+	ReadLanguage string
+	// CaptureKeys is the chord pressed in the target window to copy what is
+	// selected there, for `open --read --capture`.
+	CaptureKeys string
 }
 
 // The environment wins over the .env file, so a one-off invocation can
@@ -138,6 +161,8 @@ func Load(getenv func(string) string) (Settings, error) {
 			Model:          lookup(ModelVar),
 			Command:        lookup(CommandVar),
 		},
+		ReadLanguage: orDefault(lookup(readLanguageVar), defaultReadLanguage),
+		CaptureKeys:  orDefault(lookup(captureKeysVar), defaultCaptureKeys),
 	}
 
 	if given.err != nil {

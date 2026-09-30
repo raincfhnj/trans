@@ -191,6 +191,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | Chord that opens the selection window |
 | `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | Chord that opens the settings window |
 | `TRANS_SELECT_COPY` | none | Chord pressed to copy the selection; without one the clipboard is read as it stands |
+| `TRANS_READ_LANGUAGE` | `ZH` | Language read-mode results come back in |
+| `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
 
 ### The settings window
 
@@ -252,3 +254,20 @@ Reference: [wazum/herdr-polyglot](https://github.com/wazum/herdr-polyglot)
 ## License
 
 [MIT](LICENSE)
+
+## Read mode
+
+The panel the other way round: English text goes in, your language comes back,
+and nothing is delivered into the window — `ctrl+d` copies the result instead,
+and `esc` closes.
+
+```bash
+trans-window open --read               # read what is on the clipboard
+trans-window open --read --capture     # start from the selection in that window
+```
+
+Both are what a hotkey should invoke. Capture saves the clipboard, brings the
+target window forward, presses `TRANS_CAPTURE_KEYS` to copy the selection, and
+puts the clipboard back the way it was. See
+[docs/read-mode.md](docs/read-mode.md) for the details, the terminals-that-treat-
+the-chord-as-an-interrupt caveat, and the settings involved.

@@ -422,6 +422,71 @@ func TestAChordCanBeTurnedOff(t *testing.T) {
 	}
 }
 
+// Read mode comes back in the author's own language, which is a decision of its
+// own: what the prompts are written into says nothing about what a reply read
+// afterwards should come back as.
+func TestTheReadLanguageIsChineseWhateverThePromptsAreTranslatedInto(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":        "w1:p3",
+		"TRANS_LANGUAGE":      "EN-GB",
+		"TRANS_READ_LANGUAGE": "DE",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.ReadLanguage != "DE" {
+		t.Errorf("ReadLanguage is %q, want the configured one", settings.ReadLanguage)
+	}
+	if settings.Options.TargetLanguage != "EN-GB" {
+		t.Errorf("TargetLanguage is %q, want EN-GB — reading has a language of its own",
+			settings.Options.TargetLanguage)
+	}
+
+	settings, err = config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.ReadLanguage != "ZH" {
+		t.Errorf("ReadLanguage is %q, want ZH by default", settings.ReadLanguage)
+	}
+}
+
+// Copying a selection out of the window the panel is about to cover takes a
+// chord, and which chord that is differs between terminals the way a paste
+// chord does.
+func TestTheChordThatCopiesASelectionIsItsOwnSetting(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.CaptureKeys != "ctrl+shift+c" {
+		t.Errorf("CaptureKeys is %q, want ctrl+shift+c by default", settings.CaptureKeys)
+	}
+	if settings.ReadLanguage != "ZH" {
+		t.Errorf("ReadLanguage is %q, want ZH — the two settings are separate",
+			settings.ReadLanguage)
+	}
+
+	settings, err = config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":       "w1:p3",
+		"TRANS_CAPTURE_KEYS": "ctrl+alt+c",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.CaptureKeys != "ctrl+alt+c" {
+		t.Errorf("CaptureKeys is %q, want the configured chord", settings.CaptureKeys)
+	}
+	if settings.ReadLanguage != "ZH" {
+		t.Errorf("ReadLanguage is %q, want ZH — the two settings are separate",
+			settings.ReadLanguage)
+	}
+}
+
 func TestSavingKeepsEveryLineItDoesNotName(t *testing.T) {
 	t.Parallel()
 	file := filepath.Join(t.TempDir(), ".env")

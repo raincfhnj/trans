@@ -16,6 +16,7 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 
 - **Native Windows panel** — opens over your terminal window, no extra software needed
 - **Selection translation** — select text in the terminal, press a chord, read the translation beside it
+- **Read mode** — English in, your language back, `ctrl+d` copies instead of sending
 - **Settings window** — service, key, panel behaviour and chords, edited in a window summoned the same way
 - **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API
 - **No key required** — free services work without any API key
@@ -85,11 +86,20 @@ trans-window select
 # Edit the settings in a window of their own
 trans-window settings
 
+# Read English that is already there — nothing is delivered into the window
+trans-window open --read
+
+# The same, starting from the selection in that window
+trans-window open --read --capture
+
 # List available windows
 trans-window list-windows
 
 # Translate text directly (no panel)
 trans-window translate "Hallo Welt"
+
+# Check a fresh installation: settings file, service, key, paths
+trans-window setup
 ```
 
 ### Selection translation
@@ -110,6 +120,25 @@ TRANS_SELECT_COPY=ctrl+shift+c
 The selection is then copied with that chord — clipboard saved, marked, chord
 pressed, read, clipboard put back — instead of read as it stands. A selection
 longer than 4000 characters is cut before it is sent.
+
+### Read mode
+
+The other half of the panel: text that is already in English — an agent's
+reply, an error, a log line — comes back in your own language, and nothing is
+delivered into the window it was found in. `ctrl+d` (or `alt+enter`) copies the
+result to the clipboard instead of sending it, `esc` closes, and the header
+says `read · service → ZH`.
+
+- `trans-window open --read` starts from the clipboard.
+- `trans-window open --read --capture` starts from the selection in the target
+  window: clipboard saved, window brought forward, `TRANS_CAPTURE_KEYS`
+  pressed, selection read, clipboard put back. If the capture finds nothing,
+  the clipboard is used and the panel says so.
+
+`TRANS_READ_LANGUAGE` (default `ZH`) is the language results come back in —
+reading has a language of its own, so it never moves what prompts are
+translated into. Nothing read is kept: no draft is saved, no confirmation is
+asked. See [docs/read-mode.md](docs/read-mode.md).
 
 ### Windows daemon
 
@@ -273,9 +302,18 @@ A local translator (`TRANS_COMMAND`) keeps everything on your machine.
 make qa       # formatting, linting, race tests, vulnerability scan
 make build    # build for Windows
 make windows  # cross-compile for Windows
+make release  # the archives a release ships (see docs/release.md)
 ```
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit together.
+Continuous integration runs the same gate on every push and pull request
+(`.github/workflows/ci.yml`); pushing a `v*` tag builds and publishes the
+release archives (`.github/workflows/release.yml`), whose file names are the
+contract the [scoop](packaging/scoop/trans.json) and
+[winget](packaging/winget/) manifests under `packaging/` are written against
+([packaging/README.md](packaging/README.md)).
+
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit
+together and [docs/release.md](docs/release.md) for cutting a release.
 
 ## Credits
 
@@ -286,20 +324,3 @@ Reference: [wazum/herdr-polyglot](https://github.com/wazum/herdr-polyglot)
 ## License
 
 [MIT](LICENSE)
-
-## Read mode
-
-The panel the other way round: English text goes in, your language comes back,
-and nothing is delivered into the window — `ctrl+d` copies the result instead,
-and `esc` closes.
-
-```bash
-trans-window open --read               # read what is on the clipboard
-trans-window open --read --capture     # start from the selection in that window
-```
-
-Both are what a hotkey should invoke. Capture saves the clipboard, brings the
-target window forward, presses `TRANS_CAPTURE_KEYS` to copy the selection, and
-puts the clipboard back the way it was. See
-[docs/read-mode.md](docs/read-mode.md) for the details, the terminals-that-treat-
-the-chord-as-an-interrupt caveat, and the settings involved.

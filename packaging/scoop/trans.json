@@ -1,0 +1,39 @@
+{
+  "version": "0.0.0",
+  "description": "Write prompts in the language you think in and get them translated to English for your coding agent, in a native Windows panel over your terminal.",
+  "homepage": "https://github.com/raincfhnj/trans",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/raincfhnj/trans/releases/download/v0.0.0/trans-window-0.0.0-windows-amd64.zip",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "arm64": {
+      "url": "https://github.com/raincfhnj/trans/releases/download/v0.0.0/trans-window-0.0.0-windows-arm64.zip",
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "bin": [
+    "trans-window.exe",
+    "trans-windowd.exe"
+  ],
+  "shortcuts": [
+    [
+      "trans-windowd.exe",
+      "trans"
+    ]
+  ],
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-amd64.zip",
+        "hash": "https://github.com/raincfhnj/trans/releases/download/v$version/SHA256SUMS.txt"
+      },
+      "arm64": {
+        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-arm64.zip",
+        "hash": "https://github.com/raincfhnj/trans/releases/download/v$version/SHA256SUMS.txt"
+      }
+    }
+  }
+}

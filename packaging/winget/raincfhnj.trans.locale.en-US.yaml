@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest-defaultLocale.1.6.0.json
+
+# Template: replace {{VERSION}} with the release version (the tag without its
+# leading v) before submitting.
+PackageIdentifier: raincfhnj.trans
+PackageVersion: "{{VERSION}}"
+PackageLocale: en-US
+Publisher: raincfhnj
+PublisherUrl: https://github.com/raincfhnj
+PackageName: trans
+PackageUrl: https://github.com/raincfhnj/trans
+License: MIT License
+LicenseUrl: https://github.com/raincfhnj/trans/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Wolfgang Klinger
+ShortDescription: Write prompts in the language you think in and get them translated to English for your coding agent.
+Description: |-
+  trans is a native Windows translation panel that opens over your terminal
+  window. The prompt is written in the language you think in, translated to
+  English, and pasted into the window in front — with code in backticks and
+  fenced blocks held back from the translation. DeepL, Google, MyMemory and
+  any OpenAI-compatible API are supported, and a local command can keep the
+  whole draft on your machine.
+Moniker: trans
+Tags:
+  - english
+  - prompt
+  - terminal
+  - translation
+  - windows
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

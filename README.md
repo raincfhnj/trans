@@ -2,6 +2,7 @@
 
 [![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![ci](https://github.com/raincfhnj/trans/actions/workflows/ci.yml/badge.svg)](https://github.com/raincfhnj/trans/actions/workflows/ci.yml)
 
 Write prompts in the language you think in and get them translated to English for your coding agent. A native Windows translation panel that opens over your terminal window.
 
@@ -14,12 +15,19 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 ## Features
 
 - **Native Windows panel** — opens over your terminal window, no extra software needed
+- **Selection translation** — select text in the terminal, press a chord, read the translation beside it
+- **Read mode** — English in, your language back, `ctrl+d` copies instead of sending
+- **Settings window** — service, key, panel behaviour and chords, edited in a window summoned the same way
 - **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API
 - **No key required** — free services work without any API key
 - **Live translation** — see the English as you write
 - **Vim bindings** — modal editing for the draft box
 - **Draft persistence** — your unfinished prompt is kept between sessions
 - **Code protection** — backticked spans and fenced blocks are not translated
+- **Translation memory** — a sentence paid for once is not paid for again, not even after a restart
+- **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
+- **Tray icon** — the daemon's chords, the settings window and start-at-logon from the notification area
+- **Encrypted key** — the API key is wrapped with Windows DPAPI, never left in the file
 
 ## Quick start
 
@@ -74,26 +82,120 @@ trans-window open --review
 # Open over a specific window
 trans-window open --target 0x1a2b3c
 
+# Translate what is selected in the window in front
+trans-window select
+
+# Edit the settings in a window of their own
+trans-window settings
+
+# Read English that is already there — nothing is delivered into the window
+trans-window open --read
+
+# The same, starting from the selection in that window
+trans-window open --read --capture
+
 # List available windows
 trans-window list-windows
 
 # Translate text directly (no panel)
 trans-window translate "Hallo Welt"
+
+# Check a fresh installation: settings file, service, key, paths
+trans-window setup
 ```
+
+### Selection translation
+
+Press the selection chord (`ctrl+alt+s` by default) with text selected in the
+pane in front. The selection is read through the clipboard — as it stands by
+default, copied out of the pane first when `TRANS_SELECT_COPY` says which chord
+copies — and a window opens over the pane with the selection and its
+translation together. Nothing is delivered: the text stays where it was
+selected.
+
+Where the terminal copies on a chord of its own, say which one:
+
+```
+TRANS_SELECT_COPY=ctrl+shift+c
+```
+
+The selection is then copied with that chord — clipboard saved, marked, chord
+pressed, read, clipboard put back — instead of read as it stands. A selection
+longer than 4000 characters is cut before it is sent.
+
+### Read mode
+
+The other half of the panel: text that is already in English — an agent's
+reply, an error, a log line — comes back in your own language, and nothing is
+delivered into the window it was found in. `ctrl+d` (or `alt+enter`) copies the
+result to the clipboard instead of sending it, `esc` closes, and the header
+says `read · service → ZH`.
+
+- `trans-window open --read` starts from the clipboard.
+- `trans-window open --read --capture` starts from the selection in the target
+  window: clipboard saved, window brought forward, `TRANS_CAPTURE_KEYS`
+  pressed, selection read, clipboard put back. If the capture finds nothing,
+  the clipboard is used and the panel says so.
+
+`TRANS_READ_LANGUAGE` (default `ZH`) is the language results come back in —
+reading has a language of its own, so it never moves what prompts are
+translated into. Nothing read is kept: no draft is saved, no confirmation is
+asked. See [docs/read-mode.md](docs/read-mode.md).
 
 ### Windows daemon
 
-`trans-windowd` waits for a hotkey and opens the panel:
+`trans-windowd` waits for three chords and opens whichever window they name:
+
+| Chord | Default | Opens |
+| --- | --- | --- |
+| `TRANS_HOTKEY` | `ctrl+alt+t` | The panel |
+| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | The selection window |
+| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | The settings window |
 
 ```bash
-# Start the daemon (default hotkey: ctrl+alt+t)
-trans-windowd
-
-# Use a custom hotkey
+# Start the daemon with a panel chord of your own
 TRANS_HOTKEY=ctrl+shift+t trans-windowd
 ```
 
+Each chord is claimed when the daemon starts — and claimed again whenever the
+tray's *Reload settings* is chosen, so a chord changed in the settings window
+takes effect without a restart. Set a chord to `off` to leave it unclaimed. On
+layouts where `ctrl+alt` types a character (AltGr on many of them), move the
+chords to `ctrl+shift` before starting.
+
+### The tray icon
+
+Right-click the icon in the notification area:
+
+| Item | What it does |
+| --- | --- |
+| Open panel | The same as pressing the panel chord |
+| Close panel | Asks every panel window to close |
+| Settings… | The settings window |
+| Reload settings | Reads the settings again and claims the chords anew |
+| Start at logon | Writes or removes the `HKCU\...\Run` entry for this program |
+| Quit | Gives the chords back and ends the daemon |
+
+`TRANS_TRAY=0` starts no tray at all; the chords work exactly as they did, and
+the only way to end the program is to end the process. A tray that cannot be
+drawn is logged and otherwise ignored. See [docs/tray.md](docs/tray.md).
+
+### Where the API key lives
+
+`TRANS_KEYS=dpapi` (the default) wraps the provider key with the Windows Data
+Protection API and keeps it in `secrets.json` beside the settings, so another
+account on the machine cannot read it. The first time the panel or the daemon
+starts after that, a plaintext key in `.env` is moved: the file is backed up to
+`.env.bak.<timestamp>`, the key is wrapped, and only then is the line taken out
+— so a failure at any point leaves the key recoverable. `TRANS_KEYS=plain`
+leaves the key in the file, untouched.
+
+See [docs/keys.md](docs/keys.md) for the order the move happens in and where
+the files sit.
+
 ## Key bindings
+
+### Panel
 
 | Key | Action |
 | --- | --- |
@@ -103,8 +205,30 @@ TRANS_HOTKEY=ctrl+shift+t trans-windowd
 | `ctrl+l` | Toggle live translation |
 | `ctrl+t` | Translate now / retry after error |
 | `tab` | Read the full translation / back to draft |
+| `ctrl+g` | Show the prompts already sent |
 | `ctrl+u` | Discard draft |
 | `esc` | Close (from normal mode if vim is on) |
+| `ctrl+c` | Close always |
+
+### Selection window
+
+| Key | Action |
+| --- | --- |
+| `esc`, `ctrl+c` | Close |
+| `ctrl+t` | Try the translation again after an error |
+| `↑` `↓`, `k` `j` | Read the translation line by line |
+| `pgup` `pgdn`, `space` | Read a page at a time |
+| `g` `G`, `home` `end` | Jump to the start / the end |
+
+### Settings window
+
+| Key | Action |
+| --- | --- |
+| `↑` `↓`, `k` `j` | Move between settings |
+| `←` `→` | Step a service or throw a flag |
+| `enter` | Write a value in; the next service; a flag |
+| `s`, `ctrl+s` | Save what changed |
+| `esc` | Close — twice when something changed |
 | `ctrl+c` | Close always |
 
 ## Settings
@@ -128,7 +252,32 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_MAX_DRAFT` | `2000` | Characters before warning |
 | `TRANS_PULSE` | `1` | `0` stops the live circle animation |
 | `TRANS_LOGO` | `1` | `0` hides the draft box signature |
-| `TRANS_HOTKEY` | `ctrl+alt+t` | Hotkey for the daemon |
+| `TRANS_HOTKEY` | `ctrl+alt+t` | Chord that opens the panel (`off` opens nothing) |
+| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | Chord that opens the selection window |
+| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | Chord that opens the settings window |
+| `TRANS_SELECT_COPY` | none | Chord pressed to copy the selection; without one the clipboard is read as it stands |
+| `TRANS_READ_LANGUAGE` | `ZH` | Language read-mode results come back in |
+| `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
+| `TRANS_HISTORY` | `1` | `0` keeps no record of sent prompts |
+| `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
+| `TRANS_TM` | `1` | `0` keeps translations for the session alone |
+| `TRANS_TM_LIMIT` | `5000` | Sentences kept before the oldest are dropped |
+| `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file |
+| `TRANS_TRAY` | `1` | `0` starts the daemon without a tray icon |
+
+### The settings window
+
+`trans-window settings` — or the settings chord — opens every one of these
+over the pane in front:
+
+- Values are changed with `←` `→` or written in with `enter`, and `s` saves.
+- What is saved goes into the `.env` in the config directory; every other line
+  stays as it stands.
+- A variable set in the environment wins over the file, so those rows carry an
+  `env` mark: saving them does not change what they answer until it is taken
+  out of the environment.
+- Saving one of the three chords says to restart `trans-windowd`.
+- The API key is shown as dots and never written out in the window.
 
 ### Services that need no key
 
@@ -141,7 +290,7 @@ TRANS_PROVIDER=gtranslate
 
 ## Local translation
 
-Point the plugin at a program instead of a service:
+Point the panel at a program instead of a service:
 
 ```bash
 TRANS_COMMAND=/path/to/translateLocally -m de-en-base
@@ -150,6 +299,30 @@ TRANS_COMMAND=/path/to/translateLocally -m de-en-base
 The draft is written to stdin, the translation read from stdout. No key, no network.
 
 See [docs/local-translation.md](docs/local-translation.md) for details.
+
+## Sent-prompt history
+
+Every prompt that reached the agent is written down — what you wrote, what was
+sent, which window it went into — and `ctrl+g` opens the record, newest first.
+`enter` puts the selected prompt back into the box exactly as it was written,
+`delete` drops one, `esc` closes. The record holds `TRANS_HISTORY_LIMIT`
+prompts (500 by default), drops the oldest beyond that, and stays on your
+machine in the state directory, written as privately as the drafts.
+
+See [docs/history.md](docs/history.md) for the details.
+
+## Translation memory
+
+While you write, the panel translates sentence by sentence and remembers what
+each sentence translated to — and `tm.jsonl` keeps that memory between
+sessions, so a sentence paid for once is not paid for again after a restart.
+Each sentence is written as it is learned, in the order it was learned, and
+`TRANS_TM_LIMIT` says how many are kept before the oldest are dropped.
+`TRANS_TM=0` keeps the memory for the session alone. The file sits in the
+state directory with the drafts and the record, written the same way — yours
+alone, never half-written — and it holds your own prompts and their English.
+
+See [docs/history.md](docs/history.md) for the details.
 
 ## What leaves your machine
 
@@ -163,9 +336,18 @@ A local translator (`TRANS_COMMAND`) keeps everything on your machine.
 make qa       # formatting, linting, race tests, vulnerability scan
 make build    # build for Windows
 make windows  # cross-compile for Windows
+make release  # the archives a release ships (see docs/release.md)
 ```
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit together.
+Continuous integration runs the same gate on every push and pull request
+(`.github/workflows/ci.yml`); pushing a `v*` tag builds and publishes the
+release archives (`.github/workflows/release.yml`), whose file names are the
+contract the [scoop](packaging/scoop/trans.json) and
+[winget](packaging/winget/) manifests under `packaging/` are written against
+([packaging/README.md](packaging/README.md)).
+
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit
+together and [docs/release.md](docs/release.md) for cutting a release.
 
 ## Credits
 

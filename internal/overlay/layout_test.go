@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"trans/internal/overlay"
+	"trans/internal/promptflow"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/overlay"
-	"trans/internal/promptflow"
 )
 
 func laidOut(t *testing.T, pane tea.WindowSizeMsg, draft, preview string) []string {
@@ -38,8 +38,8 @@ func laidOut(t *testing.T, pane tea.WindowSizeMsg, draft, preview string) []stri
 
 var longWord = strings.Repeat("Donaudampfschifffahrtsgesellschaft", 6)
 
-// The pane is the size herdr gave it. A wider line or an extra row is drawn over
-// the agent's work or lost off the edge.
+// The pane is the size the terminal gave it. A wider line or an extra row is
+// drawn over the agent's work or lost off the edge.
 func TestThePopupKeepsItsShapeWhateverIsInIt(t *testing.T) {
 	pane := tea.WindowSizeMsg{Width: 87, Height: 15}
 	empty := laidOut(t, pane, "", "")

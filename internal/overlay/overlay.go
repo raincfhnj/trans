@@ -10,12 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"trans/internal/history"
+	"trans/internal/promptflow"
+	"trans/internal/vimarea"
+
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"trans/internal/promptflow"
-	"trans/internal/vimarea"
 )
 
 // Prompter is the draft's way out: translated for reading, delivered for the
@@ -57,6 +58,9 @@ type Options struct {
 	// Drafts keeps an unfinished prompt between sessions. Without one the draft
 	// simply goes when the popup closes.
 	Drafts Drafts
+	// History is the record of prompts already delivered, which ctrl+g opens.
+	// Without one there is no record and no key for it.
+	History History
 	// SendKey is how the key that hands a prompt over is named in the footer. A
 	// terminal that keeps the chord for itself — Windows Terminal opens it full
 	// screen — has the panel name the other key that sends.
@@ -66,6 +70,21 @@ type Options struct {
 	// pre-edit text where the writing is instead of at the foot of the panel;
 	// only a console the console host draws can be moved that way.
 	Cursor *CursorPlace
+	// Read turns the panel around: the draft holds text to read — an agent's
+	// reply, an error, anything already in English — and the second pane shows
+	// it in the author's own language, which Language then names. Nothing is
+	// delivered into the window; the key that sends elsewhere copies the result
+	// to the clipboard.
+	Read bool
+	// Prefill opens with text already in the draft: what was on the clipboard,
+	// or a selection captured from the window. It arrived rather than being
+	// written, but unlike a draft from an earlier session it is exactly what
+	// the panel was opened for, so live translation takes it up at once.
+	Prefill string
+	// PrefillTrouble is why there is nothing to start with when something was
+	// asked for and did not come — a capture that found nothing, a chord that
+	// would not press — said out loud as soon as the popup opens, like Trouble.
+	PrefillTrouble error
 }
 
 // CursorPlace is a cell of the frame just drawn, counted the way a terminal
@@ -101,6 +120,15 @@ type Drafts interface {
 	Clear() error
 }
 
+// History is the record of prompts that already reached the agent. It is
+// written on delivery and read back by ctrl+g, which is how a prompt sent last
+// week can be sent again instead of being remembered and retyped.
+type History interface {
+	Record(source, translation string, how promptflow.Delivery) error
+	Entries() ([]history.Entry, error)
+	Forget(entry *history.Entry) error
+}
+
 // errNoService is what the keys for translating say when there is nothing to
 // translate with.
 var errNoService = errors.New("no translation service configured")
@@ -128,8 +156,8 @@ const (
 	defaultMaxDraft     = 2_000
 	defaultNoticeLinger = 5 * time.Second
 
-	// Herdr keeps some of a popup for its own frame: measured against 0.8.0, a
-	// pane comes back three columns and two rows smaller than the size asked for.
+	// The panel keeps some of a popup for its own frame: three columns and two
+	// rows of the size asked for are frame rather than content.
 	popupChromeColumns = 3
 	popupChromeRows    = 2
 
@@ -170,6 +198,13 @@ type Model struct {
 	draft    vimarea.Model
 	spinner  spinner.Model
 	stage    stage
+	// confirmWait is the number of the preview request the send key is waiting
+	// on while Options.Confirm translates the draft before it may go out. It is
+	// 0 whenever no confirmation is owed, so a cancelled preview reply can tell
+	// whether the translating stage is waiting for it — and must then let go —
+	// or whether the stage belongs to an ordinary send already on its way, which
+	// the reply must not touch.
+	confirmWait int
 	// failure is a broken way out, so it stays on screen.
 	failure error
 	// loadFailure is a kept draft that could not be read, which the author has to
@@ -201,6 +236,12 @@ type Model struct {
 	reading bool
 	// readingFrom is the first row of the translation on screen while reading.
 	readingFrom int
+	// historyOpen puts the record of delivered prompts on screen instead of the
+	// draft, with the entry the arrows are on ready to be taken back.
+	historyOpen bool
+	historyList []history.Entry
+	historyAt   int
+	historyFrom int
 	// draftTop is the first row of the draft on screen, kept here because the text
 	// area does not say where its own view sits.
 	draftTop int
@@ -221,9 +262,21 @@ type Model struct {
 func New(ctx context.Context, prompter Prompter, options Options) Model {
 	look := newStyles()
 
+	// Read mode keeps nothing: the text came from somewhere else, a reply to
+	// read is not a prompt being written, and copying twice costs nothing — so
+	// there is no store to save to and nothing to confirm before the copy.
+	if options.Read {
+		options.Drafts = nil
+		options.Confirm = false
+	}
+
+	placeholder := "Write your prompt in your own language …"
+	if options.Read {
+		placeholder = "Paste or write what you want to read …"
+	}
 	draft := vimarea.New(
 		vimarea.WithVim(options.Vim),
-		vimarea.WithPlaceholder("Write your prompt in your own language …"),
+		vimarea.WithPlaceholder(placeholder),
 		vimarea.WithStyles(look.text, look.placeholder, look.cursorFor(options.Cursor)),
 	)
 	draft.SetHeight(draftHeight)
@@ -268,11 +321,18 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 			model.resize(maxContentWidth)
 		}
 	}
+	// Text that arrived rather than being written still does not mark the box:
+	// it is what the panel was opened for, not yesterday's thinking.
+	if options.Prefill != "" {
+		model.draft.Resume(options.Prefill)
+	}
 	return model
 }
 
 type (
-	promptSentMsg   struct{}
+	// translated is the text the agent received, kept so the prompt can be
+	// written down together with what was sent instead of written in twice.
+	promptSentMsg   struct{ translated string }
 	blankDraftMsg   struct{}
 	submitFailedMsg struct{ err error }
 	hintMsg         struct{ what string }
@@ -307,6 +367,15 @@ func (m Model) Init() tea.Cmd {
 	}
 	if m.heldBackLive {
 		started = append(started, hint("resumed draft, so live is off — ctrl+l translates it"))
+	}
+	if m.options.PrefillTrouble != nil {
+		started = append(started, refuse(m.options.PrefillTrouble))
+	}
+	// Prefilled text is there to be read, so live translation takes it up at
+	// once rather than waiting for an edit. A wall of it is the exception this
+	// box has always made: too long to translate is too long however it came.
+	if m.options.Prefill != "" && m.options.Live && !m.draftIsTooLong() {
+		started = append(started, m.schedulePreview())
 	}
 	return tea.Batch(started...)
 }
@@ -344,7 +413,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, beating
 
 	case promptSentMsg:
+		// Read mode copies instead of delivering. The draft and the result stay
+		// where they are — one copy may go to more than one place — and the way
+		// out is what is said.
+		if m.options.Read {
+			m.stage = composing
+			return m, hint("copied to clipboard · esc closes")
+		}
 		m.delivered = true
+		// The record is written before the box empties, because the box is what
+		// the prompt was written in.
+		m.recordDelivery(msg.translated)
 		m.forgetDraft()
 		// Neither way of delivering closes the panel: a sent prompt and one that
 		// was only typed into the agent's input both leave the box empty and
@@ -379,8 +458,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return breathing, tea.Batch(cmd, breathing.beginPulse())
 
 	case previewReadyMsg:
-		if msg.request != m.requested || errors.Is(msg.err, context.Canceled) {
+		if errors.Is(msg.err, context.Canceled) {
+			// A cancelled translation is normally passed over — except the one
+			// the send key is waiting for. That translation will never come, so
+			// the wait is abandoned and the panel goes back in front of the
+			// draft, where the send key works again. Any other cancelled reply
+			// belongs to a preview the stage never waited for and changes
+			// nothing: an ordinary send on its way must keep the stage.
+			if m.confirmWait != 0 && msg.request == m.confirmWait {
+				m.abandonConfirm()
+			}
 			return m, nil
+		}
+		if msg.request != m.requested {
+			return m, nil
+		}
+		if m.confirmWait != 0 && msg.request == m.confirmWait {
+			m.confirmWait = 0
 		}
 		m.previewOf, m.preview, m.previewError = msg.of, msg.text, msg.err
 		m.endPulse()
@@ -416,6 +510,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) emptied() (tea.Model, tea.Cmd) {
 	m.delivered = false
 	m.stage = composing
+	m.confirmWait = 0
 	m.stopPreview()
 	m.draft.Clear()
 	m.draftTop = 0
@@ -433,6 +528,7 @@ func (m Model) emptied() (tea.Model, tea.Cmd) {
 // raiseNotice puts a message up and starts the clock that takes it down again.
 func (m Model) raiseNotice(why error) (tea.Model, tea.Cmd) {
 	m.stage = composing
+	m.confirmWait = 0
 	m.notice = why
 	ticking := m.startNoticeClock()
 	return m, ticking
@@ -550,12 +646,25 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Type == tea.KeyCtrlC:
 		return m, tea.Quit
 
+	// The record of delivered prompts answers to its own keys while it is open,
+	// and ctrl+g opens it from wherever the panel is.
+	case m.historyOpen || key.Type == tea.KeyCtrlG:
+		return m.historyKey(key)
+
 	// Tab flips between writing and reading the translation.
 	case key.Type == tea.KeyTab:
 		return m.flipReading(), nil
 
 	case m.reading:
 		return m.readKey(key)
+
+	// Escape closes a read-mode panel whatever is on screen: the text came from
+	// somewhere else, nothing here is kept for next time, and the notice says
+	// so. Leaving an edit mode is the one exception — a vim author's fingers
+	// expect escape out of insert before anything else.
+	case m.options.Read && key.Type == tea.KeyEsc &&
+		(!m.draft.Modal() || m.draft.Mode() == vimarea.Normal):
+		return m.close()
 
 	// Escape takes the message away. It must not also close the popup.
 	case key.Type == tea.KeyEsc && (m.notice != nil || m.hint != ""):
@@ -564,6 +673,7 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Type == tea.KeyEsc && m.stage == confirming:
 		m.stage = composing
+		m.confirmWait = 0
 		m.refit()
 		return m, nil
 
@@ -593,12 +703,17 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.revision++
 		started, cmd := m.startPreview()
 		translating := started.(Model)
+		// A confirmation that asked for this translation waits for this one now.
+		if translating.confirmWait != 0 {
+			translating.confirmWait = translating.requested
+		}
 		return translating, tea.Batch(cmd, translating.beginPulse())
 
 	// ctrl+u clears the whole draft, as it clears a line in a shell. The text
 	// area would otherwise use it to delete back to the line start.
 	case key.Type == tea.KeyCtrlU:
 		m.stage = composing
+		m.confirmWait = 0
 		m.draft.Clear()
 		m.draftTop = 0
 		m.forgetDraft()
@@ -606,8 +721,8 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.preview, m.previewOf, m.previewError = "", "", nil
 		return m, nil
 
-	// Sending is deliberate: a bare enter is a new line, alt+enter sends. Herdr
-	// passes the chord through as one key press, so two presses of escape and
+	// Sending is deliberate: a bare enter is a new line, alt+enter sends. The
+	// terminal hands each press over on its own, so two presses of escape and
 	// enter stay two messages and cannot become a send.
 	case key.Type == tea.KeyCtrlD, key.Type == tea.KeyEnter && key.Alt:
 		switch m.stage {
@@ -696,7 +811,19 @@ func (m Model) translateForConfirmation() (tea.Model, tea.Cmd) {
 	model, cmd := m.startPreview()
 	confirming := model.(Model)
 	confirming.stage = translating
+	// The stage waits for exactly this request; while confirmWait says so, a
+	// cancelled reply for it lets go of the wait instead of stranding it.
+	confirming.confirmWait = confirming.requested
 	return confirming, tea.Batch(m.spinner.Tick, cmd)
+}
+
+// abandonConfirm lets go of a confirmation translation that was cancelled on
+// its way. Nothing is on its way out, so the panel returns to the draft: the
+// send key is at work again and any preview already scheduled can run.
+func (m *Model) abandonConfirm() {
+	m.confirmWait = 0
+	m.stage = composing
+	m.refit()
 }
 
 func (m Model) deliverPreview() (tea.Model, tea.Cmd) {
@@ -713,7 +840,7 @@ func (m Model) deliverPreview() (tea.Model, tea.Cmd) {
 		if err := m.prompter.Deliver(m.ctx, prompt, m.delivery); err != nil {
 			return submitFailedMsg{err: err}
 		}
-		return promptSentMsg{}
+		return promptSentMsg{translated: prompt}
 	})
 }
 
@@ -725,8 +852,15 @@ func (m *Model) stopPreview() {
 }
 
 func (m Model) startSubmit() (tea.Model, tea.Cmd) {
+	// A send already on its way answers for the send key; starting a second one
+	// here would put the same prompt in front of the agent twice.
+	if m.stage == translating {
+		return m, nil
+	}
+
 	draft := m.draft.Value()
 	m.stage = translating
+	m.confirmWait = 0
 	m.notice = nil
 	m.stopPreview()
 
@@ -752,18 +886,19 @@ func (m Model) startSubmit() (tea.Model, tea.Cmd) {
 			if err := m.prompter.Deliver(m.ctx, preview, m.delivery); err != nil {
 				return submitFailedMsg{err: err}
 			}
-			return promptSentMsg{}
+			return promptSentMsg{translated: preview}
 		})
 	}
 
 	return m, tea.Batch(m.spinner.Tick, func() tea.Msg {
-		switch _, err := m.prompter.Submit(m.ctx, draft, m.delivery); {
+		translated, err := m.prompter.Submit(m.ctx, draft, m.delivery)
+		switch {
 		case errors.Is(err, promptflow.ErrBlankDraft):
 			return blankDraftMsg{}
 		case err != nil:
 			return submitFailedMsg{err: err}
 		default:
-			return promptSentMsg{}
+			return promptSentMsg{translated: translated}
 		}
 	})
 }
@@ -795,8 +930,8 @@ func (m Model) forgetDraft() {
 		return
 	}
 	if err := m.options.Drafts.Clear(); err != nil {
-		// The prompt is already delivered, so this cannot stop anything; herdr
-		// keeps what a plugin writes here in its log.
+		// The prompt is already delivered, so this cannot stop anything; the
+		// winlog package keeps what this program writes down in its log.
 		fmt.Fprintln(os.Stderr, "trans: the sent draft could not be forgotten:", err)
 	}
 }

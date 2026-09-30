@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/exp/teatest"
-
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/exp/teatest"
 )
 
 // markingTranslator answers with English that says which draft it came from, so a
@@ -149,4 +149,141 @@ func driveOnce(model tea.Model, cmd tea.Cmd) tea.Model {
 		model, _ = model.Update(msg)
 	}
 	return model
+}
+
+// ctxAwareTranslator stops the moment its request is cancelled, the way a real
+// service does, so a test can let a translation be abandoned on the way.
+type ctxAwareTranslator struct{ english string }
+
+func (c ctxAwareTranslator) Translate(ctx context.Context, _ string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return c.english, nil
+}
+
+// Writing on while the confirmation translation runs cancels it — live
+// translation lets go of the request it started for the older draft. The
+// cancelled reply must not leave the panel translating forever with the send
+// key dead; the panel falls back to the draft and sending works again.
+func TestACancelledConfirmationTranslationLeavesTheSendKeyWorking(t *testing.T) {
+	t.Parallel()
+	target := &recordingTarget{}
+
+	var model tea.Model = overlay.New(context.Background(),
+		promptflow.New(ctxAwareTranslator{english: english}, target, target),
+		overlay.Options{
+			Service: "deepl", Language: "EN-US",
+			Confirm: true, Live: true, Debounce: time.Millisecond,
+		})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 87, Height: 17})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("erste Fassung")})
+
+	// The send key asks for the translation the confirmation waits for.
+	model, waiting := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if !overlay.IsTranslating(model.(overlay.Model)) {
+		t.Fatal("the confirmation translation never started")
+	}
+
+	// Writing on while it runs cancels it.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")})
+
+	// The cancelled reply comes back and must not strand the stage.
+	model = driveOnce(model, waiting)
+	if overlay.IsTranslating(model.(overlay.Model)) {
+		t.Fatal("the panel still waits for a translation that was cancelled")
+	}
+	if overlay.IsConfirming(model.(overlay.Model)) {
+		t.Fatal("the panel confirms a translation that never arrived")
+	}
+
+	// The send key works again: a fresh confirmation arrives, then goes out.
+	model, sending := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	model = driveOnce(model, sending)
+	if !overlay.IsConfirming(model.(overlay.Model)) {
+		t.Fatal("the send key did not start a fresh confirmation")
+	}
+
+	model, delivering := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	driveOnce(model, delivering)
+	if len(target.inserted) != 1 || target.inserted[0] != english {
+		t.Errorf("target received %v, want the draft sent once after the cancelled confirmation",
+			target.inserted)
+	}
+}
+
+// ctrl+l turning live off while the confirmation translation runs cancels it
+// the same way writing on does, and the panel has to come back the same way.
+func TestTurningLiveOffDuringAConfirmationLeavesTheSendKeyWorking(t *testing.T) {
+	t.Parallel()
+	target := &recordingTarget{}
+
+	var model tea.Model = overlay.New(context.Background(),
+		promptflow.New(ctxAwareTranslator{english: english}, target, target),
+		overlay.Options{
+			Service: "deepl", Language: "EN-US",
+			Confirm: true, Live: true, Debounce: time.Millisecond,
+		})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 87, Height: 17})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("erste Fassung")})
+
+	model, waiting := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	// ctrl+l takes live translation out from under the running request.
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+
+	model = driveOnce(model, waiting)
+	if overlay.IsTranslating(model.(overlay.Model)) {
+		t.Fatal("the panel still waits for the translation ctrl+l cancelled")
+	}
+
+	model, sending := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	model = driveOnce(model, sending)
+	if !overlay.IsConfirming(model.(overlay.Model)) {
+		t.Fatal("the send key did not start a fresh confirmation")
+	}
+
+	model, delivering := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	driveOnce(model, delivering)
+	if len(target.inserted) != 1 {
+		t.Errorf("target received %v, want the draft sent once", target.inserted)
+	}
+}
+
+// The translating stage can belong to an ordinary send rather than to a
+// confirmation. A cancelled preview the send never waited for must then be
+// passed over without handing the send key back while the send is still out —
+// or the same prompt could be sent twice.
+func TestACancelledPreviewLeavesAnOrdinarySendOnItsWay(t *testing.T) {
+	t.Parallel()
+	target := &recordingTarget{}
+
+	var model tea.Model = overlay.New(context.Background(),
+		promptflow.New(ctxAwareTranslator{english: english}, target, target),
+		overlay.Options{
+			Service: "deepl", Language: "EN-US",
+			Live: true, Debounce: time.Millisecond,
+		})
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 87, Height: 17})
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(draft)})
+
+	// A preview is asked for and left unanswered for now.
+	model, previewing := model.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+
+	// Sending stops that preview and puts the stage on the send itself.
+	model, sending := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if !overlay.IsTranslating(model.(overlay.Model)) {
+		t.Fatal("the send never started")
+	}
+
+	// The abandoned preview answers with its cancellation; the send keeps the stage.
+	model = driveOnce(model, previewing)
+	if !overlay.IsTranslating(model.(overlay.Model)) {
+		t.Fatal("a cancelled preview took the stage from the send already on its way")
+	}
+
+	driveOnce(model, sending)
+	if len(target.inserted) != 1 || target.inserted[0] != english {
+		t.Errorf("target received %v, want the one send to go through untouched", target.inserted)
+	}
 }

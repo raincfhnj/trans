@@ -3,9 +3,9 @@ package overlay
 import (
 	"errors"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"trans/internal/promptflow"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 const DraftHeight = draftHeight
@@ -37,6 +37,10 @@ func ConfirmationOf(m Model, draft, translated string) Model {
 }
 
 func IsConfirming(m Model) bool { return m.stage == confirming }
+
+// IsTranslating says the panel is on its way: a send or the translation a
+// confirmed send waits for has started and has not answered yet.
+func IsTranslating(m Model) bool { return m.stage == translating }
 
 // ShowsEnglish answers whether the pane has room for the translation, live on or
 // off, which is what makes ctrl+l worth pressing.

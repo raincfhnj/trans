@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"trans/internal/vimarea"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A narrow popup soft-wraps. vim's `j` moves by LOGICAL line (gj moves by

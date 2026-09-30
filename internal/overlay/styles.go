@@ -2,7 +2,7 @@ package overlay
 
 import "github.com/charmbracelet/lipgloss"
 
-// Herdr paints the terminal palette from the active theme but does not expose
+// The terminal paints its palette from the active theme but does not expose
 // the theme itself, so the overlay only names palette slots and lets whatever
 // theme is running decide how they look.
 var (
@@ -13,7 +13,7 @@ var (
 	bright = lipgloss.Color("13")
 )
 
-// Foregrounds only: a cell left alone keeps the background herdr painted.
+// Foregrounds only: a cell left alone keeps the background the terminal painted.
 type styles struct {
 	text        lipgloss.Style
 	placeholder lipgloss.Style

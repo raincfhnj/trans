@@ -151,10 +151,9 @@ func TestDeliverKeepsControlCharactersOutOfTheAgentsTerminal(t *testing.T) {
 	}
 }
 
-// Herdr puts text into an agent's input without a line break standing for a
-// keypress — measured against herdr 0.8.0, with both `agent prompt` and
-// `pane send-text`. So a prompt keeps the shape it was written in, which is what
-// makes a pasted code block worth delivering at all.
+// The prompt reaches an agent's input by a clipboard paste, without a line
+// break standing for a keypress. So a prompt keeps the shape it was written
+// in, which is what makes a pasted code block worth delivering at all.
 func TestDeliverKeepsTheShapeOfAMultiLinePrompt(t *testing.T) {
 	target := &recordingTarget{}
 

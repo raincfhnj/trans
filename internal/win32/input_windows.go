@@ -103,6 +103,23 @@ func Chord(spec string) error {
 		return err
 	}
 
+	held := heldKeys(modifiers)
+	for _, modifier := range held {
+		keyDown(modifier)
+	}
+	press(uintptr(key))
+	for index := len(held) - 1; index >= 0; index-- {
+		keyUp(held[index])
+	}
+	return nil
+}
+
+// heldKeys is the set of keys held down for a combination, in the order they
+// are pressed (and the reverse of that for the release). It answers for win as
+// for the others: a chord written win+v is the Windows key held while v is
+// pressed, which is the paste chord on its way to the clipboard history — it
+// must not degrade into a bare v.
+func heldKeys(modifiers uint32) []uintptr {
 	held := []uintptr{}
 	if modifiers&modControl != 0 {
 		held = append(held, vkControl)
@@ -113,14 +130,19 @@ func Chord(spec string) error {
 	if modifiers&modAlt != 0 {
 		held = append(held, vkMenu)
 	}
-	for _, modifier := range held {
-		keyDown(modifier)
+	if modifiers&modWin != 0 {
+		held = append(held, vkLWin)
 	}
-	press(uintptr(key))
-	for index := len(held) - 1; index >= 0; index-- {
-		keyUp(held[index])
-	}
-	return nil
+	return held
+}
+
+// StillForeground says whether the window is the one holding the keyboard right
+// now. Focus is not held for anyone: a click, a notification, or a dialog the
+// target opens takes it, and keys sent after that go to whatever took it. The
+// moment a key is about to be sent is therefore asked again, not assumed from
+// the activation that happened earlier.
+func StillForeground(handle uintptr) bool {
+	return handle != 0 && Foreground().Handle == handle
 }
 
 // Enter presses return, which is what hands the prompt over in a pane that is

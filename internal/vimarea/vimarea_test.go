@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"trans/internal/vimarea"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
-
-	"trans/internal/vimarea"
 )
 
 func TestTypingWorksStraightAwayBecauseTheDraftStartsInInsertMode(t *testing.T) {

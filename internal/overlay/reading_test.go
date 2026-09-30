@@ -1,17 +1,20 @@
 package overlay_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
-
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/muesli/termenv"
 )
 
 func numberedEnglish(sentences int) string {
@@ -155,4 +158,120 @@ func TestTheReadingFooterSaysHowToGetAroundAndOut(t *testing.T) {
 	if lipgloss.Width(footer) > 87 {
 		t.Errorf("the reading footer is %d columns: %q", lipgloss.Width(footer), footer)
 	}
+}
+
+// slowPrompter holds a send on its way until the test lets it go, and counts
+// every call that reaches it.
+type slowPrompter struct {
+	mu       sync.Mutex
+	submits  int
+	delivers int
+	started  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (s *slowPrompter) Submit(_ context.Context, _ string, _ promptflow.Delivery) (string, error) {
+	s.once.Do(func() { close(s.started) })
+	s.mu.Lock()
+	s.submits++
+	s.mu.Unlock()
+	<-s.release
+	return english, nil
+}
+
+func (s *slowPrompter) Translate(context.Context, string) (string, error) {
+	return english, nil
+}
+
+func (s *slowPrompter) Deliver(_ context.Context, _ string, _ promptflow.Delivery) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.delivers++
+	return nil
+}
+
+func (s *slowPrompter) Usage(context.Context) (promptflow.Usage, bool, error) {
+	return promptflow.Usage{}, false, nil
+}
+
+func (s *slowPrompter) counts() (submits, delivers int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.submits, s.delivers
+}
+
+// Tab to reading is free while a send is on its way, but the send key is not:
+// pressing it from reading must not start a second Submit or Deliver of the
+// same draft while the first one is still out.
+func TestSendingFromReadingWhileASendIsInFlightSendsNothingTwice(t *testing.T) {
+	t.Parallel()
+	prompter := &slowPrompter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(prompter.release) }) }
+	t.Cleanup(release)
+
+	overlayUnderTest := teatest.NewTestModel(t,
+		overlay.New(context.Background(), prompter, overlay.Options{
+			Service: "deepl", Language: "EN-US",
+		}),
+		teatest.WithInitialTermSize(87, 17))
+
+	overlayUnderTest.Type(draft)
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	select {
+	case <-prompter.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the send never started")
+	}
+
+	// Reading is reachable while the send runs — the send key is not.
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyTab})
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
+	time.Sleep(300 * time.Millisecond)
+
+	if submits, delivers := prompter.counts(); submits != 1 || delivers != 0 {
+		t.Errorf("the send key from reading started %d submits and %d deliveries while one was in flight, want none",
+			submits, delivers)
+	}
+
+	// The one send on its way finishes, and the panel is ready again.
+	release()
+	waitForTheNextPrompt(t, overlayUnderTest)
+
+	if submits, delivers := prompter.counts(); submits != 1 || delivers != 0 {
+		t.Errorf("the prompt reached the target as %d submits and %d deliveries, want it sent once",
+			submits, delivers)
+	}
+
+	closeTheOverlay(t, overlayUnderTest)
+}
+
+// The English waits for its go-ahead while confirming; the send key from reading
+// must give it rather than fall silent.
+func TestSendingFromReadingWhileConfirmingDeliversTheEnglish(t *testing.T) {
+	t.Parallel()
+	target := &recordingTarget{}
+
+	overlayUnderTest := confirmingOverlay(t, markingTranslator{}, target)
+	overlayUnderTest.Type("erste Fassung")
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
+
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("EN(erste Fassung)"))
+	}, teatest.WithDuration(2*time.Second))
+
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyTab})
+	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
+	waitForTheNextPrompt(t, overlayUnderTest)
+
+	if len(target.inserted) != 1 || target.inserted[0] != "EN(erste Fassung)" {
+		t.Errorf("target received %v, want the confirmed English delivered once", target.inserted)
+	}
+
+	closeTheOverlay(t, overlayUnderTest)
 }

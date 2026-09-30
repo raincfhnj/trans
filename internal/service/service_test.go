@@ -147,3 +147,58 @@ func TestAServiceThatNeedsNoKeyIsAnsweredWithoutAKey(t *testing.T) {
 		t.Errorf("the service without a key reports trouble: %v", chosen.Trouble)
 	}
 }
+
+// The README documents TRANS_PROVIDER with the default `auto`, so a user who
+// follows it must land on the automatic choice. No registry holds a service by
+// that name, and asking for one breaks every translation.
+func TestAutoProviderNameMeansTheAutomaticChoiceRatherThanAService(t *testing.T) {
+	registry := Registry()
+
+	for _, test := range []struct {
+		name        string
+		options     translation.Options
+		wantName    string
+		wantTranses bool
+	}{
+		{
+			name:        "a key picks the default service",
+			options:     translation.Options{APIKey: "key-123", TargetLanguage: "EN-US"},
+			wantName:    "deepl",
+			wantTranses: true,
+		},
+		{
+			name:        "a command picks the local service",
+			options:     translation.Options{Command: "translate-the-draft"},
+			wantName:    "cmd",
+			wantTranses: true,
+		},
+		{
+			name:        "neither picks off",
+			options:     translation.Options{},
+			wantName:    "off",
+			wantTranses: false,
+		},
+	} {
+		automatic := ChooseWith(registry, &config.Settings{Options: test.options})
+		if automatic.Name != test.wantName || automatic.Translates != test.wantTranses {
+			t.Errorf("%s: the automatic choice is %q (translates=%t), want %q (translates=%t)",
+				test.name, automatic.Name, automatic.Translates, test.wantName, test.wantTranses)
+		}
+		if automatic.Trouble != nil {
+			t.Errorf("%s: the automatic choice reports trouble: %v", test.name, automatic.Trouble)
+		}
+
+		for _, provider := range []string{"auto", "Auto", " AUTO "} {
+			chosen := ChooseWith(registry, &config.Settings{Provider: provider, Options: test.options})
+
+			if chosen.Trouble != nil {
+				t.Errorf("%s with Provider %q reports trouble: %v", test.name, provider, chosen.Trouble)
+			}
+			if chosen.Name != automatic.Name || chosen.Translates != automatic.Translates {
+				t.Errorf("%s with Provider %q chose %q (translates=%t), want the same as no provider: %q (translates=%t)",
+					test.name, provider, chosen.Name, chosen.Translates,
+					automatic.Name, automatic.Translates)
+			}
+		}
+	}
+}

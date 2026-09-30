@@ -1,6 +1,6 @@
 # Vim bindings
 
-Off by default, since modal editing is a matter of taste. `HERDR_TRANS_VIM=1`
+Off by default, since modal editing is a matter of taste. `TRANS_VIM=1`
 makes the draft box modal and the footer shows which mode you are in.
 
 This covers what makes sense inside a text box. There are no files, buffers or

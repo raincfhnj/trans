@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest-version.1.6.0.json
+
+# Template: replace {{VERSION}} with the release version (the tag without its
+# leading v) before submitting. In winget-pkgs this file lives at
+# manifests/r/raincfhnj/trans/<version>/raincfhnj.trans.yaml
+PackageIdentifier: raincfhnj.trans
+PackageVersion: "{{VERSION}}"
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

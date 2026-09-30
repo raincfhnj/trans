@@ -22,6 +22,8 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 - **Vim bindings** — modal editing for the draft box
 - **Draft persistence** — your unfinished prompt is kept between sessions
 - **Code protection** — backticked spans and fenced blocks are not translated
+- **Translation memory** — a sentence paid for once is not paid for again, not even after a restart
+- **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
 
 ## Quick start
 
@@ -141,6 +143,7 @@ before starting.
 | `ctrl+l` | Toggle live translation |
 | `ctrl+t` | Translate now / retry after error |
 | `tab` | Read the full translation / back to draft |
+| `ctrl+g` | Show the prompts already sent |
 | `ctrl+u` | Discard draft |
 | `esc` | Close (from normal mode if vim is on) |
 | `ctrl+c` | Close always |
@@ -193,6 +196,10 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_SELECT_COPY` | none | Chord pressed to copy the selection; without one the clipboard is read as it stands |
 | `TRANS_READ_LANGUAGE` | `ZH` | Language read-mode results come back in |
 | `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
+| `TRANS_HISTORY` | `1` | `0` keeps no record of sent prompts |
+| `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
+| `TRANS_TM` | `1` | `0` keeps translations for the session alone |
+| `TRANS_TM_LIMIT` | `5000` | Sentences kept before the oldest are dropped |
 
 ### The settings window
 
@@ -228,6 +235,30 @@ TRANS_COMMAND=/path/to/translateLocally -m de-en-base
 The draft is written to stdin, the translation read from stdout. No key, no network.
 
 See [docs/local-translation.md](docs/local-translation.md) for details.
+
+## Sent-prompt history
+
+Every prompt that reached the agent is written down — what you wrote, what was
+sent, which window it went into — and `ctrl+g` opens the record, newest first.
+`enter` puts the selected prompt back into the box exactly as it was written,
+`delete` drops one, `esc` closes. The record holds `TRANS_HISTORY_LIMIT`
+prompts (500 by default), drops the oldest beyond that, and stays on your
+machine in the state directory, written as privately as the drafts.
+
+See [docs/history.md](docs/history.md) for the details.
+
+## Translation memory
+
+While you write, the panel translates sentence by sentence and remembers what
+each sentence translated to — and `tm.jsonl` keeps that memory between
+sessions, so a sentence paid for once is not paid for again after a restart.
+Each sentence is written as it is learned, in the order it was learned, and
+`TRANS_TM_LIMIT` says how many are kept before the oldest are dropped.
+`TRANS_TM=0` keeps the memory for the session alone. The file sits in the
+state directory with the drafts and the record, written the same way — yours
+alone, never half-written — and it holds your own prompts and their English.
+
+See [docs/history.md](docs/history.md) for the details.
 
 ## What leaves your machine
 

@@ -50,7 +50,9 @@ func OpenOver(options PopupOptions) error {
 	}
 
 	// The panel needs something to draw into: a process with no console has
-	// nowhere for the overlay to go, and that is worth failing on here.
+	// nowhere for the overlay to go, and that is worth failing on here. The
+	// resize asks for it again on every attempt and its failure is only a
+	// delay, so this is the one place that says a missing console out loud.
 	if _, err := consoleHandle(); err != nil {
 		return err
 	}

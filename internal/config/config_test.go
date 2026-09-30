@@ -328,6 +328,8 @@ func TestAValueThatIsNeitherOnNorOffIsRefused(t *testing.T) {
 		"TRANS_CONFIRM",
 		"TRANS_KEEP_DRAFT",
 		"TRANS_PULSE",
+		"TRANS_HISTORY",
+		"TRANS_TM",
 	} {
 		environment := map[string]string{
 			"TRANS_TARGET": "w1:p1",
@@ -419,6 +421,70 @@ func TestAChordCanBeTurnedOff(t *testing.T) {
 	}
 	if settings.Hotkey != "OFF" {
 		t.Errorf("Hotkey is %q, want the setting kept as it was written", settings.Hotkey)
+	}
+}
+
+// The record of prompts already delivered is written unless it is turned off,
+// and how much of it is kept is a number the setting has to make sense of.
+func TestTheRecordOfDeliveredPromptsIsKeptUnlessTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p1"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if !settings.History {
+		t.Error("History is false, want the record kept by default")
+	}
+	if settings.HistoryLimit != 500 {
+		t.Errorf("HistoryLimit is %d, want 500 by default", settings.HistoryLimit)
+	}
+
+	off, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":        "w1:p1",
+		"TRANS_HISTORY":       "0",
+		"TRANS_HISTORY_LIMIT": "7",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if off.History {
+		t.Error("History is true, want it turned off by TRANS_HISTORY=0")
+	}
+	if off.HistoryLimit != 7 {
+		t.Errorf("HistoryLimit is %d, want 7 from TRANS_HISTORY_LIMIT", off.HistoryLimit)
+	}
+}
+
+// The translations are written out between sessions unless they are not, and
+// how many sentences are kept is a number the setting has to make sense of.
+func TestTheTranslationMemoryIsKeptUnlessTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p1"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if !settings.TM {
+		t.Error("TM is false, want the memory kept by default")
+	}
+	if settings.TMLimit != 5000 {
+		t.Errorf("TMLimit is %d, want 5000 by default", settings.TMLimit)
+	}
+
+	off, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":   "w1:p1",
+		"TRANS_TM":       "off",
+		"TRANS_TM_LIMIT": "999",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if off.TM {
+		t.Error("TM is true, want it turned off by TRANS_TM=off")
+	}
+	if off.TMLimit != 999 {
+		t.Errorf("TMLimit is %d, want 999 from TRANS_TM_LIMIT", off.TMLimit)
 	}
 }
 
@@ -696,5 +762,21 @@ func TestPrepareKeepsASettingsFileThatIsAlreadyThere(t *testing.T) {
 	}
 	if string(kept) != "TRANS_PROVIDER=gtranslate\n" {
 		t.Errorf("the settings file is now %q, want the author's own kept", kept)
+	}
+}
+
+func TestAnUnreadableLimitIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, variable := range []string{"TRANS_HISTORY_LIMIT", "TRANS_TM_LIMIT"} {
+		for _, value := range []string{"0", "viele"} {
+			_, err := config.Load(envFrom(map[string]string{
+				"TRANS_TARGET": "w1:p1",
+				variable:       value,
+			}))
+			if err == nil || !strings.Contains(err.Error(), variable) {
+				t.Errorf("%s=%s failed with %v, want the variable named", variable, value, err)
+			}
+		}
 	}
 }

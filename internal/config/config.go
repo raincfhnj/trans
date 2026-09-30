@@ -44,6 +44,16 @@ const (
 	configDirVar    = "TRANS_CONFIG_DIR"
 	stateDirVar     = "TRANS_STATE_DIR"
 
+	historyVar      = "TRANS_HISTORY"
+	historyLimitVar = "TRANS_HISTORY_LIMIT"
+
+	defaultHistoryLimit = 500
+
+	tmVar      = "TRANS_TM"
+	tmLimitVar = "TRANS_TM_LIMIT"
+
+	defaultTMLimit = 5000
+
 	defaultLanguage = "EN-US"
 	dotenvName      = ".env"
 
@@ -106,6 +116,19 @@ type Settings struct {
 	// CaptureKeys is the chord pressed in the target window to copy what is
 	// selected there, for `open --read --capture`.
 	CaptureKeys string
+
+	// History is whether the prompts already delivered are written down, so
+	// the panel can offer them again instead of them being retyped.
+	History bool
+	// HistoryLimit is how many delivered prompts are kept before the oldest
+	// ones are dropped.
+	HistoryLimit int
+
+	// TM is whether the translations are written out between sessions, so a
+	// sentence paid for once is not paid for again after a restart.
+	TM bool
+	// TMLimit is how many sentences are kept before the oldest are dropped.
+	TMLimit int
 }
 
 // The environment wins over the .env file, so a one-off invocation can
@@ -154,6 +177,13 @@ func Load(getenv func(string) string) (Settings, error) {
 		SelectHotkey: orDefault(lookup(SelectHotkeyVar), defaultSelectHotkey),
 		ConfigHotkey: orDefault(lookup(ConfigHotkeyVar), defaultConfigHotkey),
 		SelectCopy:   lookup(SelectCopyVar),
+
+		History:      given.flag(historyVar, true),
+		HistoryLimit: given.count(historyLimitVar, defaultHistoryLimit),
+
+		TM:      given.flag(tmVar, true),
+		TMLimit: given.count(tmLimitVar, defaultTMLimit),
+
 		Options: translation.Options{
 			APIKey:         orDefault(lookup(ScopedKeyVar(provider)), lookup(ApiKeyVar)),
 			TargetLanguage: orDefault(lookup(LanguageVar), defaultLanguage),
@@ -204,6 +234,23 @@ func (r *reading) number(variable string) int {
 	if err != nil || number < 0 {
 		r.refuse(variable, value, "not a whole number of characters")
 		return 0
+	}
+	return number
+}
+
+// A count that cannot be read is not quietly taken as the default: a typo in
+// TRANS_HISTORY_LIMIT would otherwise silently change how much is kept.
+// Unlike a character count, zero here means nobody wants any.
+func (r *reading) count(variable string, whenUnset int) int {
+	value := strings.TrimSpace(r.lookup(variable))
+	if value == "" {
+		return whenUnset
+	}
+
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 1 {
+		r.refuse(variable, value, "not a positive whole number")
+		return whenUnset
 	}
 	return number
 }

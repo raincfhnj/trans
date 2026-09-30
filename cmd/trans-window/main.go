@@ -30,6 +30,7 @@ import (
 
 	"trans/internal/config"
 	"trans/internal/draft"
+	"trans/internal/history"
 	"trans/internal/overlay"
 	"trans/internal/promptflow"
 	"trans/internal/selection"
@@ -321,12 +322,14 @@ func runPanel() error {
 		window.Handle, window.Title, chosen.Name, pasteKeys)
 	placeOver(window, overlay.PopupWidth, overlay.PopupHeight())
 
+	// Writing means translating the same draft again and again, so a preview
+	// pays for each sentence once — and a memory written out means a restart
+	// does not pay for them again either. Protecting sits outside the cache,
+	// so a fenced block is taken out before the draft is split into sentences.
+	memory := tmMemory(&cfg)
 	flowOptions := []promptflow.Option{
-		// Writing means translating the same draft again and again, so a preview
-		// pays for each sentence once. Protecting sits outside the cache, so a
-		// fenced block is taken out before the draft is split into sentences.
 		promptflow.WithPreviewTranslator(
-			translation.Protecting(translation.Segmented(translator))),
+			translation.Protecting(translation.Segmented(translator, memory))),
 	}
 	if spending, keepsCount := service.UsageReporter(translator); keepsCount {
 		flowOptions = append(flowOptions, promptflow.WithUsageReporter(spending))
@@ -387,7 +390,8 @@ func runPanel() error {
 			Prefill:        prefill,
 			PrefillTrouble: prefillTrouble,
 
-			Drafts: drafts(&cfg, window.Title),
+			Drafts:  drafts(&cfg, window.Title),
+			History: historyLog(&cfg, window.Title),
 		}),
 		programOptions...,
 	)
@@ -408,6 +412,11 @@ func runPanel() error {
 		if err := kept.KeepUnfinished(); err != nil {
 			fmt.Fprintln(os.Stderr, "trans-window:", err)
 		}
+	}
+	// Every sentence was written as it was learned; this is only the write
+	// that could not get through on the way, tried once more on the way out.
+	if flushErr := memory.Flush(); flushErr != nil {
+		fmt.Fprintln(os.Stderr, "trans-window:", flushErr)
 	}
 	winlog.Note("panel", "closed: %v", err)
 	// A window that was closed ends the program this way; it is not a failure.
@@ -568,13 +577,36 @@ func drafts(cfg *config.Settings, title string) overlay.Drafts {
 	if !cfg.KeepDraft || cfg.StateDir == "" {
 		return nil
 	}
-	// A handle is different every time a terminal starts; its title is what the
-	// author would recognize as the pane they were writing in.
-	key := title
-	if strings.TrimSpace(key) == "" {
-		key = cfg.Target
+	return draft.NewStore(cfg.StateDir).For(windowKey(cfg, title))
+}
+
+// historyLog is the record of prompts this panel delivers. Every window writes
+// into the same file, each entry saying which window it was delivered into.
+func historyLog(cfg *config.Settings, title string) overlay.History {
+	if !cfg.History || cfg.StateDir == "" {
+		return nil
 	}
-	return draft.NewStore(cfg.StateDir).For(key)
+	return history.NewStore(cfg.StateDir, cfg.HistoryLimit).For(windowKey(cfg, title))
+}
+
+// tmMemory is the sentence cache written to the state directory, so a
+// sentence paid for once is not paid for again after the panel is closed.
+// Without it the cache lives for the session alone.
+func tmMemory(cfg *config.Settings) *translation.Memory {
+	if !cfg.TM || cfg.StateDir == "" {
+		return nil
+	}
+	return translation.NewMemory(cfg.StateDir, cfg.TMLimit)
+}
+
+// windowKey is how a window is named in the panel's own files. A handle is
+// different every time a terminal starts; its title is what the author would
+// recognize as the pane they were writing in.
+func windowKey(cfg *config.Settings, title string) string {
+	if strings.TrimSpace(title) == "" {
+		return cfg.Target
+	}
+	return title
 }
 
 func boolSetting(value bool) string {

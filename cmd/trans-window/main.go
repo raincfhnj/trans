@@ -216,6 +216,7 @@ func runSelect(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	protectKey(&cfg)
 
 	selected, readErr := win32.SelectedText(cfg.SelectCopy)
 	// A selection longer than the service would take is cut to what it would;
@@ -248,8 +249,21 @@ func runSettings(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	protectKey(&cfg)
 	options := windowSettings(&cfg)
 	return openOver("settings", "", "", settings.PopupWidth, settings.PopupHeight(options))
+}
+
+// protectKey moves a plaintext key into the protected store if there is one to
+// move, and fills the key back in from there when the file no longer carries
+// it. Every program of this tree that has just read the settings does this, so
+// the services see the same Options.APIKey whether the key is in the file, in
+// the protected store, or in neither.
+func protectKey(cfg *config.Settings) {
+	if note := config.UpgradeSecrets(cfg); note != "" {
+		winlog.Note("window", "%s", note)
+	}
+	config.ResolveKey(cfg)
 }
 
 // panelMargin keeps the panel off the very edge of the window it opens over.
@@ -564,6 +578,7 @@ func translate(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	protectKey(&cfg)
 	chosen := service.Choose(&cfg)
 	// The command line carries the text the way the panel does — code and all —
 	// so it goes out through the same protection: a fenced or backticked span is

@@ -41,8 +41,12 @@ const (
 	SelectHotkeyVar = "TRANS_SELECT_HOTKEY"
 	ConfigHotkeyVar = "TRANS_CONFIG_HOTKEY"
 	SelectCopyVar   = "TRANS_SELECT_COPY"
-	configDirVar    = "TRANS_CONFIG_DIR"
-	stateDirVar     = "TRANS_STATE_DIR"
+	// KeysVar decides how the provider key is kept on disk: "dpapi" wraps it
+	// with Windows Data Protection (the default), "plain" leaves the .env
+	// line alone and skips the migration. The settings window shows it.
+	KeysVar      = "TRANS_KEYS"
+	configDirVar = "TRANS_CONFIG_DIR"
+	stateDirVar  = "TRANS_STATE_DIR"
 
 	historyVar      = "TRANS_HISTORY"
 	historyLimitVar = "TRANS_HISTORY_LIMIT"
@@ -116,6 +120,10 @@ type Settings struct {
 	// CaptureKeys is the chord pressed in the target window to copy what is
 	// selected there, for `open --read --capture`.
 	CaptureKeys string
+	// Keys is TRANS_KEYS: how the provider key is stored at rest — "dpapi"
+	// (the default) or "plain". Read like any other setting, so the
+	// environment and the .env file both have their say.
+	Keys string
 
 	// History is whether the prompts already delivered are written down, so
 	// the panel can offer them again instead of them being retyped.
@@ -171,6 +179,7 @@ func Load(getenv func(string) string) (Settings, error) {
 		Logo:       given.flag(logoVar, true),
 		MaxDraft:   given.number(maxDraftVar),
 		PasteKeys:  lookup(PasteVar),
+		Keys:       orDefault(lookup(KeysVar), keysDPAPI),
 		Hotkey:     orDefault(lookup(HotkeyVar), defaultHotkey),
 		// Each window keeps its own chord, so a panel that answers one press
 		// does not have to give up the selection's.

@@ -232,7 +232,7 @@ func Resolve(target Target) (Window, error) {
 // moment a key is about to be sent is therefore asked again, not assumed from
 // the activation that happened earlier.
 func StillForeground(handle uintptr) bool {
-	return handle != 0 && foreground().Handle == handle
+	return handle != 0 && Foreground().Handle == handle
 }
 
 // Activate brings a window to the front and gives it the keyboard. Windows only

@@ -179,19 +179,6 @@ func NameConsole(title string) {
 	call(procSetConsoleTitle, uintptr(unsafe.Pointer(pointer)))
 }
 
-// OwnConsole is whether the console of this process is drawn by the console host
-// itself rather than by a terminal program that keeps the screen to itself. A
-// console of its own can be moved, written to and have its cursor placed; one a
-// terminal program draws answers to nobody but that program.
-func OwnConsole() bool {
-	own := call(procGetConsoleWindow)
-	if own == 0 {
-		return false
-	}
-	area := windowRect(own)
-	return area.width() >= 200 && area.height() >= 120
-}
-
 // hostWindow is the window that draws this console. A console the console host
 // draws has a window of its own, which is the one to place and the one to take
 // the frame off; a terminal program's console has none, and the window is found

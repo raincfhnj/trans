@@ -110,7 +110,12 @@ func TestAStaleConfirmationIsTranslatedAgainRatherThanDelivered(t *testing.T) {
 }
 
 // drive runs commands the way the runtime would, feeding every message back into
-// the model until nothing is left to do.
+// the model until nothing is left to do. A command that is still waiting after
+// cmdPatience is taken for one that is waiting on a timer — a debounce, a
+// message that lingers — and is left to answer later: the runtime would deliver
+// its message in its own time, and a test that slept for it would be measuring
+// the clock rather than the panel. That is where the two eleven-second tests in
+// this package used to go.
 func drive(model tea.Model, cmd tea.Cmd) tea.Model {
 	pending := []tea.Cmd{cmd}
 	for rounds := 0; len(pending) > 0 && rounds < 12; rounds++ {
@@ -120,7 +125,11 @@ func drive(model tea.Model, cmd tea.Cmd) tea.Model {
 			continue
 		}
 
-		switch msg := next().(type) {
+		msg, answered := within(next, cmdPatience)
+		if !answered {
+			continue
+		}
+		switch msg := msg.(type) {
 		case nil:
 		case tea.BatchMsg:
 			pending = append(pending, msg...)
@@ -131,6 +140,26 @@ func drive(model tea.Model, cmd tea.Cmd) tea.Model {
 		}
 	}
 	return model
+}
+
+// cmdPatience is how long a command is given to answer before it is taken for
+// one that is waiting on a timer. Work that is done returns at once; a tick
+// sleeps, and nothing in a test needs the message it would deliver.
+const cmdPatience = 50 * time.Millisecond
+
+// within runs one command and says whether it answered in time. The command
+// itself is left running: it may deliver its message into the buffered channel
+// and be collected, which is what a tick does when its moment finally comes.
+func within(cmd tea.Cmd, patience time.Duration) (tea.Msg, bool) {
+	answered := make(chan tea.Msg, 1)
+	go func() { answered <- cmd() }()
+
+	select {
+	case msg := <-answered:
+		return msg, true
+	case <-time.After(patience):
+		return nil, false
+	}
 }
 
 // driveOnce runs the commands a model asked for, without following what those

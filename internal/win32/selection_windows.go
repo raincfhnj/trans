@@ -30,17 +30,6 @@ func ReleaseClipboard(snapshot ClipboardSnapshot) {
 	}
 }
 
-// foreground is the window that has the keyboard right now, which is the window
-// a capture copies out of and the one a delivery checks before each of its
-// keystrokes.
-func foreground() Window {
-	handle := call(procGetForegroundWindow)
-	if handle == 0 {
-		return Window{}
-	}
-	return Window{Handle: handle, Title: Title(handle)}
-}
-
 // clipboardSequence is the number Windows moves every time the contents of the
 // clipboard change. A capture waits for it to move instead of sleeping and
 // hoping: it is the only signal the clipboard offers, and it says that
@@ -95,7 +84,7 @@ func systemSelectionPorts() selectionPorts {
 // when the capture starts, because that is where the chord was pressed. A
 // capture has no handle of its own to work from.
 func foregroundTarget() uintptr {
-	return foreground().Handle
+	return Foreground().Handle
 }
 
 // The bounds on the waits a delivery does, and the steps it polls in. Each is a

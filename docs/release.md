@@ -8,7 +8,7 @@ page is the sequence around that contract.
 ## 1. Test
 
 ```bash
-make qa      # formatting, linting, race tests, vulnerability scan
+make qa      # formatting, vet, lint, race tests, vulnerability scan
 go test ./...
 ```
 

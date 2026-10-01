@@ -342,17 +342,27 @@ A local translator (`TRANS_COMMAND`) keeps everything on your machine.
 ## Development
 
 ```bash
-make qa       # formatting, linting, race tests, vulnerability scan
-make build    # build for Windows
-make windows  # cross-compile for Windows
+make tools    # the linter and the scanner, at the versions CI uses
+make qa       # formatting, vet, lint, race tests, vulnerability scan
+make cover    # the same tests with a coverage report, whose last line is the total
+make build    # build for Windows in bin/ (the same flags the release uses)
 make release  # the archives a release ships (see docs/release.md)
 ```
 
+`make qa` needs `make tools` once, and `make release` additionally needs `zip`
+and `sha256sum`, so it runs in a POSIX shell (Linux, macOS, WSL, Git Bash).
+Everything else runs wherever Go does.
+
 Continuous integration runs the same gate on every push and pull request
-(`.github/workflows/ci.yml`); pushing a `v*` tag builds and publishes the
-release archives (`.github/workflows/release.yml`), whose file names are the
-contract the [scoop](packaging/scoop/trans.json) and
-[winget](packaging/winget/) manifests under `packaging/` are written against
+(`.github/workflows/ci.yml`) — formatting, vet, a lint pass for each of linux
+and windows, a cross-build for both Windows architectures, the race suite with
+a coverage floor of 60%, and `govulncheck` — plus a check that the packaging
+manifests still name the archives a release builds. The Windows-only files are
+compiled and linted by that second pass, which is where the tests on this
+platform cannot look. Pushing a `v*` tag builds and publishes the release
+archives (`.github/workflows/release.yml`), whose file names are the contract
+the [scoop](packaging/scoop/trans.json) and [winget](packaging/winget/)
+manifests under `packaging/` are written against
 ([packaging/README.md](packaging/README.md)).
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit

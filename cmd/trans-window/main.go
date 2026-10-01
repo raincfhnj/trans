@@ -411,7 +411,9 @@ func protectKey(cfg *config.Settings) {
 	if note := config.UpgradeSecrets(cfg); note != "" {
 		winlog.Note("window", "%s", note)
 	}
-	config.ResolveKey(cfg)
+	if note := config.ResolveKey(cfg); note != "" {
+		winlog.Note("window", "%s", note)
+	}
 }
 
 // panelMargin keeps the panel off the very edge of the window it opens over.

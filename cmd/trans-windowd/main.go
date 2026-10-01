@@ -110,7 +110,9 @@ func load() (config.Settings, bool) {
 	if note := config.UpgradeSecrets(&settings); note != "" {
 		complain("%s", note)
 	}
-	config.ResolveKey(&settings)
+	if note := config.ResolveKey(&settings); note != "" {
+		complain("%s", note)
+	}
 	return settings, true
 }
 

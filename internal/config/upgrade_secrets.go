@@ -110,28 +110,43 @@ func backup(file string) error {
 	return os.WriteFile(file+".bak."+stamp, content, 0o600)
 }
 
-// ResolveKey fills the key in from the protected store when the settings
-// carry none, so the services see Options.APIKey exactly as before the
-// migration. It runs on every system: where DPAPI does not exist the store
-// answers ErrUnsupported and the key is simply left as it was.
-func ResolveKey(settings *Settings) {
+// ResolveKey fills the key in from the protected store when the settings carry
+// none, so the services see Options.APIKey exactly as before the migration. It
+// runs on every system: where DPAPI does not exist the store answers
+// ErrUnsupported and the key is simply left as it was.
+//
+// What it answers is a note for the caller to log, and only when the store holds
+// a key that cannot be read: a record for another account, a file that has been
+// edited, a store that cannot be opened at all. Nothing to find is not a note —
+// a program with no key is an ordinary state — but a key that is there and
+// stays shut is worth saying, because from the outside it looks exactly like
+// having no key at all.
+func ResolveKey(settings *Settings) string {
 	if settings.Options.APIKey != "" || settings.ConfigFile == "" {
-		return
+		return ""
 	}
 	if settings.Keys == keysPlain {
-		return
+		return ""
 	}
+	directory := filepath.Dir(settings.ConfigFile)
+	trouble := ""
 	// The scoped name is tried first and the plain one after it, the same
 	// order Load reads them in: a key filed under TRANS_API_KEY is still the
 	// key for whichever service happens to be chosen today.
 	for _, variable := range keyCandidates(settings.Provider) {
-		value, err := secrets.Load(filepath.Dir(settings.ConfigFile), variable)
-		if err != nil {
-			continue
+		value, err := secrets.Load(directory, variable)
+		switch {
+		case err == nil:
+			settings.Options.APIKey = string(value)
+			return ""
+		case errors.Is(err, secrets.ErrNotFound), errors.Is(err, secrets.ErrUnsupported):
+			// Nothing filed under that name, or no protected store on this
+			// system: the next name, if there is one, is all that is left.
+		default:
+			trouble = variable + " is in the protected store but could not be read: " + err.Error()
 		}
-		settings.Options.APIKey = string(value)
-		return
 	}
+	return trouble
 }
 
 // keyCandidates is where the key for a service may be filed, most specific

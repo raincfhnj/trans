@@ -197,6 +197,55 @@ func TestTheKeyModeNamesWhatIsInForce(t *testing.T) {
 	}
 }
 
+// A key that is in the store and cannot be read is said out loud: from the
+// outside it looks exactly like having no key at all, and the difference is the
+// only clue to why nothing is being translated.
+func TestAKeyThatCannotBeReadIsSaidOutLoud(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("DPAPI only exists on Windows")
+	}
+	directory := writeDotenv(t, "TRANS_PROVIDER=deepl\n")
+	// A store with a record for the key, holding bytes that are not a protected
+	// value: what an account change or an edited file leaves behind.
+	store := `{"records":[{"variable":"TRANS_DEEPL_API_KEY","protected":"bm90IGEga2V5"}]}`
+	if err := os.WriteFile(filepath.Join(directory, "secrets.json"), []byte(store), 0o600); err != nil {
+		t.Fatalf("writing the store: %v", err)
+	}
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_CONFIG_DIR": directory}))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	note := config.ResolveKey(&settings)
+
+	if note == "" {
+		t.Fatal("a key that could not be read was passed over in silence")
+	}
+	if !strings.Contains(note, "TRANS_DEEPL_API_KEY") {
+		t.Errorf("the note reads %q, want the setting it is about", note)
+	}
+	if settings.Options.APIKey != "" {
+		t.Errorf("the key came back as %q, want nothing read out of a store that refused", settings.Options.APIKey)
+	}
+}
+
+// Nothing to find is not a note: a program with no key is an ordinary state, and
+// saying so on every start would be noise rather than news.
+func TestAKeyThatIsSimplyNotThereIsNotSaidOutLoud(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("DPAPI only exists on Windows")
+	}
+	directory := writeDotenv(t, "TRANS_PROVIDER=gtranslate\n")
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_CONFIG_DIR": directory}))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	if note := config.ResolveKey(&settings); note != "" {
+		t.Errorf("ResolveKey answered %q, want nothing said about a key that was never stored", note)
+	}
+}
+
 // TRANS_KEYS=plain is how a user says the file is theirs to keep: nothing
 // moves, nothing breaks.
 func TestPlainModeLeavesTheFileAlone(t *testing.T) {

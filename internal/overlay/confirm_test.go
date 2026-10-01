@@ -33,7 +33,7 @@ func TestWritingAfterAConfirmationNeverDeliversTheOlderEnglish(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("EN(erste Fassung)"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// The draft moves on while the English of the older one is on screen.
 	overlayUnderTest.Type(" und mehr")
@@ -41,13 +41,13 @@ func TestWritingAfterAConfirmationNeverDeliversTheOlderEnglish(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("EN(erste Fassung und mehr)"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != "EN(erste Fassung und mehr)" {
-		t.Errorf("target received %v, want only the English of the draft as it stood", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != "EN(erste Fassung und mehr)" {
+		t.Errorf("target received %v, want only the English of the draft as it stood", target.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -65,21 +65,21 @@ func TestDiscardingADraftDuringConfirmationSendsNothing(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("EN(wieder weg)"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlU})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("the draft is empty"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing after the draft was thrown away", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing after the draft was thrown away", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // A translation is only ever delivered for the draft it was made from, whatever
@@ -102,7 +102,7 @@ func TestAStaleConfirmationIsTranslatedAgainRatherThanDelivered(t *testing.T) {
 	next, cmd := next.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	drive(next, cmd)
 
-	for _, delivered := range target.inserted {
+	for _, delivered := range target.sent() {
 		if delivered == "EN(eine andere Fassung)" {
 			t.Errorf("target received %q, the English of a draft that is not there", delivered)
 		}
@@ -206,9 +206,9 @@ func TestACancelledConfirmationTranslationLeavesTheSendKeyWorking(t *testing.T) 
 
 	model, delivering := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	driveOnce(model, delivering)
-	if len(target.inserted) != 1 || target.inserted[0] != english {
+	if len(target.sent()) != 1 || target.sent()[0] != english {
 		t.Errorf("target received %v, want the draft sent once after the cancelled confirmation",
-			target.inserted)
+			target.sent())
 	}
 }
 
@@ -245,8 +245,8 @@ func TestTurningLiveOffDuringAConfirmationLeavesTheSendKeyWorking(t *testing.T) 
 
 	model, delivering := model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	driveOnce(model, delivering)
-	if len(target.inserted) != 1 {
-		t.Errorf("target received %v, want the draft sent once", target.inserted)
+	if len(target.sent()) != 1 {
+		t.Errorf("target received %v, want the draft sent once", target.sent())
 	}
 }
 
@@ -283,7 +283,7 @@ func TestACancelledPreviewLeavesAnOrdinarySendOnItsWay(t *testing.T) {
 	}
 
 	driveOnce(model, sending)
-	if len(target.inserted) != 1 || target.inserted[0] != english {
-		t.Errorf("target received %v, want the one send to go through untouched", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != english {
+		t.Errorf("target received %v, want the one send to go through untouched", target.sent())
 	}
 }

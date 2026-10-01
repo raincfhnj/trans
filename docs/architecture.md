@@ -54,15 +54,22 @@ every other line alone. Neither of them delivers anything.
 | `draft`, `history`, `atomicfile` | An unfinished prompt on disk, one file per window; the record of prompts already delivered; and the one write both of them — and the settings file — go through: a fresh file for its owner alone, moved into place so nothing is ever read half-written. |
 | `win32`, `wintarget`, `winlog` | The same windows on Windows: the chords the daemon claims, the selection read out of the pane, the window each popup opens over, the paste that delivers a prompt into it, and the log a program without a console has to write to. Each waits on a signal where Windows offers one — the clipboard sequence number, the window in front, the target's input queue — and only falls back to a named delay where none exists. |
 | `httpapi` | The one HTTP transport the five services share: timeouts, response caps, a redirect guard that keeps a key from leaving https, retry with backoff and `Retry-After`, and the error kinds `translation.Trouble` turns into sentences. |
-| `secrets` | The provider key at rest, wrapped with Windows DPAPI, in a file of its own beside the `.env`. |
+| `secrets` | The provider key at rest, wrapped with Windows DPAPI, in a file of its own beside the `.env`; `config.UpgradeSecrets` moves a plaintext key into it and `ResolveKey` reads it back for whoever asked. |
+| `tray` | The notification-area icon the daemon carries: its own hidden window and message loop on a thread of its own, and the menu that opens the panel, the settings, a reload, the logon entry and the end of the program. |
+| `setup` | The first-run doctor: what a working installation needs — the toolchain, the settings file, the service and its key, the programs on `PATH`, a speech voice — reported as lines or as one JSON object. |
 
 `cmd/trans-window` is the composition root for all three windows: it reads the
 settings, resolves the key from wherever it is kept, asks `service` for the one
 that was chosen, wires the flow to its targets and starts the window its
-command line named — the panel, the selection, or the settings.
-`cmd/trans-windowd` is the daemon beside it, claiming the three chords and
-handing off to the subcommand each one names. Nothing below them knows which
-service is in use or how the popup was opened.
+command line named — the panel, the selection, or the settings. It also carries
+`setup`, which is the same reading of the settings with the answer printed
+instead.
+`cmd/trans-windowd` is the daemon beside it, claiming the chords the settings
+name and handing off to the subcommand each one names, with the tray beside the
+chord loop: the chords belong to the thread that claimed them, so the tray — on
+a thread of its own — only posts to that one, and a reload is the daemon's own
+work rather than the tray's. Nothing below them knows which service is in use or
+how the popup was opened.
 
 `promptflow` owns the ports it needs — `Translator`, `Target`, `UsageReporter` —
 and imports no adapter package, not even `translation`. Where the two

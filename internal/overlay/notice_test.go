@@ -75,7 +75,7 @@ func TestEscapeTakesTheNoticeAwayWithoutClosingThePopup(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("nothing to translate — the draft is empty"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Type("weiter geht es")
@@ -83,10 +83,10 @@ func TestEscapeTakesTheNoticeAwayWithoutClosingThePopup(t *testing.T) {
 	// A closed popup would never show this.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("weiter geht es"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // A kept draft that cannot be read must be said out loud: writing here and
@@ -100,8 +100,8 @@ func TestADraftThatCannotBeReadIsReported(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("permission denied"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }

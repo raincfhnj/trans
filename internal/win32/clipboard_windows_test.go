@@ -1,6 +1,9 @@
 //go:build windows
 
-package wintarget_test
+// The tests of the clipboard itself, in the package that keeps it. They were
+// written next to the delivery that uses the clipboard first, which left the
+// package they actually check without a test of its own.
+package win32_test
 
 import (
 	"syscall"

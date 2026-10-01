@@ -267,8 +267,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 
 ### The settings window
 
-`trans-window settings` — or the settings chord — opens every one of these
-over the pane in front:
+`trans-window settings` — or the settings chord — opens the settings the window
+offers over the pane in front:
 
 - Values are changed with `←` `→` or written in with `enter`, and `s` saves.
 - What is saved goes into the `.env` in the config directory; every other line
@@ -276,8 +276,16 @@ over the pane in front:
 - A variable set in the environment wins over the file, so those rows carry an
   `env` mark: saving them does not change what they answer until it is taken
   out of the environment.
-- Saving one of the three chords says to restart `trans-windowd`.
+- Saving one of the three chords says the daemon has to claim them again — the
+  tray's *Reload settings* does it in place, or restart `trans-windowd`.
 - The API key is shown as dots and never written out in the window.
+
+Not every setting is in the window: `TRANS_MAX_DRAFT`, `TRANS_PULSE`,
+`TRANS_LOGO`, `TRANS_HISTORY`, `TRANS_HISTORY_LIMIT`, `TRANS_READ_LANGUAGE`,
+`TRANS_CAPTURE_KEYS`, `TRANS_KEYS` and `TRANS_TRAY` are written in the `.env`
+or set in the environment. `TRANS_TARGET` is the window the panel opens over
+when nothing is named in front of it, and is read by the panel rather than
+edited anywhere.
 
 ### Services that need no key
 

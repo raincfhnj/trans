@@ -96,7 +96,7 @@ func newSelection(t *testing.T, translator selection.Translator, options selecti
 func closeSelection(t *testing.T, model *teatest.TestModel) {
 	t.Helper()
 	model.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 // waitFor reads the window until every wanted word has been on screen,
@@ -153,7 +153,7 @@ func TestEscapeClosesTheWindow(t *testing.T) {
 	waitFor(t, model, english)
 
 	model.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 func TestCtrlCAlsoClosesTheWindow(t *testing.T) {

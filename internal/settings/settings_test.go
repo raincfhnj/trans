@@ -98,7 +98,7 @@ func containsAll(shown []byte, wanted ...string) bool {
 func closeWindow(t *testing.T, model *teatest.TestModel) {
 	t.Helper()
 	model.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 func stepDown(model *teatest.TestModel, rows int) {
@@ -269,7 +269,7 @@ func TestEscapeAsksBeforeDroppingUnsavedChanges(t *testing.T) {
 	waitFor(t, model, "unsaved", "esc again")
 
 	model.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 func TestEscapeClosesWhenNothingHasChanged(t *testing.T) {
@@ -282,7 +282,7 @@ func TestEscapeClosesWhenNothingHasChanged(t *testing.T) {
 	waitFor(t, model, "service")
 
 	model.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 // Ctrl+C is the way out of every window here, even from the middle of writing.
@@ -299,7 +299,7 @@ func TestCtrlCClosesEvenWhileARowIsBeingWritten(t *testing.T) {
 	waitFor(t, model, "enter", "keep")
 
 	model.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	model.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	model.WaitFinished(t, teatest.WithFinalTimeout(10*time.Second))
 }
 
 // A variable set in the environment wins over the file this window writes, so

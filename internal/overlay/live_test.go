@@ -29,7 +29,7 @@ func TestABigPasteIsNotTranslatedUntilItIsAskedFor(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("pasted"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	if calls := translator.count(); calls != 0 {
 		t.Errorf("the service was asked %d times for text that was pasted, not written", calls)
@@ -39,10 +39,10 @@ func TestABigPasteIsNotTranslatedUntilItIsAskedFor(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlL})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // Ordinary writing is not a paste, whatever the pace.
@@ -62,8 +62,8 @@ func TestWritingKeepsLiveTranslationOn(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }

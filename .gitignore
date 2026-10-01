@@ -1,3 +1,5 @@
 bin/
 dist/
 .env
+coverage
+coverage.out

@@ -87,7 +87,7 @@ func systemSelectionPorts() selectionPorts {
 			return Chord(chord)
 		},
 		waitCopy:   WaitForClipboardChange,
-		waitSettle: pause,
+		waitSettle: Pause,
 	}
 }
 
@@ -130,7 +130,7 @@ func WaitForForeground(ctx context.Context, handle uintptr) bool {
 		if time.Now().After(deadline) {
 			return false
 		}
-		if err := pause(ctx, foregroundPoll); err != nil {
+		if err := Pause(ctx, foregroundPoll); err != nil {
 			return false
 		}
 	}
@@ -149,7 +149,7 @@ func WaitForClipboardChange(ctx context.Context) bool {
 	started := clipboardSequence()
 	deadline := time.Now().Add(clipboardWait)
 	for time.Now().Before(deadline) {
-		if err := pause(ctx, clipboardPoll); err != nil {
+		if err := Pause(ctx, clipboardPoll); err != nil {
 			return false
 		}
 		if clipboardSequence() != started {
@@ -178,7 +178,7 @@ func WaitForInputIdle(ctx context.Context, handle uintptr) bool {
 		if !busy {
 			return true
 		}
-		if err := pause(ctx, inputQueuePoll); err != nil {
+		if err := Pause(ctx, inputQueuePoll); err != nil {
 			return false
 		}
 	}

@@ -53,7 +53,7 @@ func main() {
 	startTray(here)
 
 	wanted := []window{}
-	claimed := claim(&settings, &wanted)
+	claimed := windows.claim(&settings, &wanted)
 	if claimed == 0 {
 		complain("no chord was claimed, so there is nothing to wait for")
 		tray.Stop()
@@ -76,9 +76,9 @@ func main() {
 			if !ok {
 				continue
 			}
-			release(wanted)
+			windows.release(wanted)
 			wanted = wanted[:0]
-			if claim(&fresh, &wanted) == 0 {
+			if windows.claim(&fresh, &wanted) == 0 {
 				complain("reload claimed no chord at all; the old ones are gone")
 			}
 
@@ -114,12 +114,30 @@ func load() (config.Settings, bool) {
 	return settings, true
 }
 
+// chords is what claiming a chord needs from the system: the parser, the claim
+// and the release. The daemon runs on the real one; a test hands in its own,
+// which is how the decisions around the chords — which one is left off, which
+// one another program already holds, what a reload gives back — are checked
+// without a desktop to claim keys on.
+type chords struct {
+	keys       func(spec string) (modifiers, key uint32, err error)
+	register   func(id, modifiers, key uint32) error
+	unregister func(id uint32) error
+}
+
+// windows is the real set: the Win32 calls the daemon runs on.
+var windows = chords{
+	keys:       win32.Keys,
+	register:   win32.RegisterHotkey,
+	unregister: win32.UnregisterHotkey,
+}
+
 // claim asks Windows for each chord the settings name, answering how many were
 // taken and filling wanted with the ones that were. A chord another program of
 // the author's already holds is reported and left to it: the other two still
 // work, and a chord that could not be claimed is not worth ending the program
 // over.
-func claim(settings *config.Settings, wanted *[]window) int {
+func (c chords) claim(settings *config.Settings, wanted *[]window) int {
 	all := []window{
 		{id: 1, variable: config.HotkeyVar, chord: settings.Hotkey, opens: "open", label: "the panel"},
 		{id: 2, variable: config.SelectHotkeyVar, chord: settings.SelectHotkey, opens: "select", label: "the selection"},
@@ -132,13 +150,13 @@ func claim(settings *config.Settings, wanted *[]window) int {
 			note("%s will not be claimed: %s is off", one.label, one.variable)
 			continue
 		}
-		modifiers, key, err := win32.Keys(one.chord)
+		modifiers, key, err := c.keys(one.chord)
 		if err != nil {
 			complain("the chord for %s (%s=%q) cannot be used: %v",
 				one.label, one.variable, one.chord, err)
 			continue
 		}
-		if err := win32.RegisterHotkey(one.id, modifiers, key); err != nil {
+		if err := c.register(one.id, modifiers, key); err != nil {
 			complain("the chord for %s (%s=%q) could not be claimed "+
 				"(is another one running?): %v", one.label, one.variable, one.chord, err)
 			continue
@@ -153,9 +171,9 @@ func claim(settings *config.Settings, wanted *[]window) int {
 // release gives every claimed chord back, so the reload can claim the new ones
 // under the same ids: RegisterHotKey refuses an id that is already taken on
 // this thread.
-func release(wanted []window) {
+func (c chords) release(wanted []window) {
 	for _, one := range wanted {
-		if err := win32.UnregisterHotkey(one.id); err != nil {
+		if err := c.unregister(one.id); err != nil {
 			complain("the chord for %s (%s) could not be given back: %v",
 				one.label, one.chord, err)
 		}
@@ -232,11 +250,14 @@ func open(subcommand string) error {
 }
 
 // A program with no console has nowhere to say something; what it has to say is
-// worth keeping anyway, so it goes next to the drafts.
-func complain(format string, arguments ...any) {
-	winlog.Note("windowd", "trouble: "+format, arguments...)
-}
-
-func note(format string, arguments ...any) {
-	winlog.Note("windowd", format, arguments...)
-}
+// worth keeping anyway, so it goes next to the drafts. The two ways of saying
+// it are variables rather than functions so that a test can hear them: what
+// the daemon decides about a chord is exactly what it says about one.
+var (
+	complain = func(format string, arguments ...any) {
+		winlog.Note("windowd", "trouble: "+format, arguments...)
+	}
+	note = func(format string, arguments ...any) {
+		winlog.Note("windowd", format, arguments...)
+	}
+)

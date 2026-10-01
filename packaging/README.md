@@ -38,9 +38,12 @@ target with `VERSION` set from the tag.
 
 [`scoop/trans.json`](scoop/trans.json) is a scoop bucket manifest. Its
 `checkver` and `autoupdate` blocks are what a bucket's automation needs to
-bump it by itself: `checkver` reads the GitHub releases, `autoupdate`
-rewrites both URLs with `$version` and takes the hash from the release's
-`SHA256SUMS.txt`.
+bump it by itself: `checkver` reads the GitHub releases, and `autoupdate`
+rewrites both URLs with `$version`. Neither block carries a `hash`: scoop
+computes each archive's SHA-256 from the file it downloaded, which is the only
+form that is right for both architectures — `SHA256SUMS.txt` is one `sha256sum`
+file listing two archives, so pointing an `autoupdate.hash` at it would hand
+the arm64 entry the amd64 digest.
 
 To publish:
 

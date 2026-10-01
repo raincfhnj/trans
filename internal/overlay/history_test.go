@@ -142,7 +142,7 @@ func TestCtrlGOpensTheRecordOfPromptsThatWereSent(t *testing.T) {
 		older := bytes.Index(out, []byte("erster prompt"))
 		return newest >= 0 && older >= 0 && newest < older &&
 			bytes.Contains(out, []byte("use it"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -154,7 +154,7 @@ func TestTheRecordSaysSoWhenNothingHasGoneOutYet(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlG})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("nothing sent yet"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -166,7 +166,7 @@ func TestTheRecordKeySaysWhenNothingIsKept(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlG})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("TRANS_HISTORY"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -179,7 +179,7 @@ func TestEnterTakesAPromptBackOutOfTheRecord(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlG})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Alter Satz"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
@@ -188,13 +188,13 @@ func TestEnterTakesAPromptBackOutOfTheRecord(t *testing.T) {
 		return bytes.Contains(recent(out), []byte("Alter Satz")) &&
 			!bytes.Contains(recent(out), []byte("Write your prompt")) &&
 			!bytes.Contains(recent(out), []byte("use it"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// The prompt is in the box, and writing goes to the box again.
 	overlayUnderTest.Type("!")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("!Alter Satz"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -207,14 +207,14 @@ func TestEscapeLeavesTheRecordWithoutTouchingTheDraft(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlG})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Ein Prompt"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Type("hallo")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("hallo")) &&
 			!bytes.Contains(recent(out), []byte("Ein Prompt"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -227,13 +227,13 @@ func TestDeleteDropsAPromptOutOfTheRecord(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlG})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Nur ein Test"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyDelete})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("Ein Prompt aus dem Protokoll")) &&
 			!bytes.Contains(recent(out), []byte("Nur ein Test"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	kept := record.kept()
 	if len(kept) != 1 || kept[0].Source != "Ein Prompt aus dem Protokoll" {
@@ -246,7 +246,7 @@ func TestDeleteDropsAPromptOutOfTheRecord(t *testing.T) {
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return !bytes.Contains(recent(out), []byte("use it")) &&
 			bytes.Contains(recent(out), []byte("Write your prompt"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	if len(record.kept()) != 0 {
 		t.Errorf("the record still holds prompts, want it emptied")
@@ -265,7 +265,7 @@ func TestADeadRecordSaysSoInsteadOfOpening(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyDelete})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(recent(out), []byte("the record is stuck"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	if len(record.kept()) != 1 {
 		t.Errorf("the record holds %d prompts, want the entry left in place", len(record.kept()))

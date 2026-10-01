@@ -27,12 +27,10 @@
   "autoupdate": {
     "architecture": {
       "64bit": {
-        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-amd64.zip",
-        "hash": "https://github.com/raincfhnj/trans/releases/download/v$version/SHA256SUMS.txt"
+        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-amd64.zip"
       },
       "arm64": {
-        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-arm64.zip",
-        "hash": "https://github.com/raincfhnj/trans/releases/download/v$version/SHA256SUMS.txt"
+        "url": "https://github.com/raincfhnj/trans/releases/download/v$version/trans-window-$version-windows-arm64.zip"
       }
     }
   }

@@ -10,6 +10,12 @@ permissions:
   # Lets the lint action annotate the offending lines in a pull request.
   checks: write
 
+# A push that supersedes another is not worth two runs: the older one is
+# cancelled, so what is reported is always about the tree as it stands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   linux:
     runs-on: ubuntu-latest
@@ -23,18 +29,35 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.13.2
+
+      # The same linter again with GOOS=windows, because the pass above never
+      # compiles the files that carry the Windows half of the program: the tray,
+      # the clipboard, the hotkeys, the DPAPI store and the settings migration
+      # are all `*_windows.go`, and a finding in one of them would otherwise
+      # reach main unnoticed.
+      - name: Lint the Windows build
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.13.2
+        env:
+          GOOS: windows
+
+      # `make qa` starts with this, and the README says CI runs the same gate:
+      # it does, which means the formatter is a step of its own here — the lint
+      # action only runs `golangci-lint run`.
+      - name: Formatting
+        run: make tools && make fmt-check
 
       # The linter is not a stand-in for the standard check: `go vet` is what a
-      # reader runs by hand, and golangci-lint's own copy of it is configured
-      # with a site-scoped exception. The one package it cannot check strictly
-      # is internal/win32, where a Windows call hands an address back as a
-      # uintptr; unsafeptr is turned off for that package alone, with the
-      # invariant written at the two conversion sites.
+      # reader runs by hand. The one package it cannot check strictly is
+      # internal/win32, where a Windows call hands an address back as a uintptr;
+      # unsafeptr is turned off for that package alone, with the invariant
+      # written at the conversion sites. The exception lives in tools/vet, the
+      # same program `make vet` runs, so the gate here and the gate on a
+      # developer's machine are one thing rather than two that drift.
       - name: Vet
-        run: |
-          go vet $(go list ./... | grep -v 'trans/internal/win32$')
-          go vet -unsafeptr=false ./internal/win32/
+        run: go run ./tools/vet
 
       # Everything outside the windows files has to build without them.
       - name: Build for linux
@@ -42,15 +65,64 @@ jobs:
 
       # The panel and the daemon are Windows programs, and their files are
       # compiled nowhere else on this job: the linter and the tests here run
-      # as linux, so this cross-build is their guard.
+      # as linux, so this cross-build is their guard. Both architectures are
+      # built because a release ships both.
       - name: Cross-build for windows
-        run: GOOS=windows go build ./...
+        run: |
+          GOOS=windows GOARCH=amd64 go build ./...
+          GOOS=windows GOARCH=arm64 go build ./...
 
-      - name: Test
-        run: go test -race ./...
+      # The manifests and the release are two sides of one contract
+      # (packaging/README.md): the names they are written against are the names
+      # `make release` produces, and this is where a change to one without the
+      # other is caught — before a release is cut, not after. The winget files
+      # are templates, so their version is the `{{VERSION}}` placeholder; the
+      # scoop manifest carries a real version and its autoupdate block uses
+      # scoop's `$version`.
+      - name: The manifests name the archives a release builds
+        run: |
+          for arch in amd64 arm64; do
+            grep -qF "trans-window-{{VERSION}}-windows-${arch}.zip" \
+              packaging/winget/raincfhnj.trans.installer.yaml \
+              || { echo "winget does not name the ${arch} archive"; exit 1; }
+            grep -qF "trans-window-\$version-windows-${arch}.zip" \
+              packaging/scoop/trans.json \
+              || { echo "scoop does not name the ${arch} archive"; exit 1; }
+          done
+          grep -qF 'NestedInstallerFiles' packaging/winget/raincfhnj.trans.installer.yaml \
+            || { echo "the winget installer does not unpack the executables flat"; exit 1; }
+          grep -qF 'SHA256SUMS.txt' packaging/README.md \
+            || { echo "the packaging README does not describe the checksum file"; exit 1; }
+
+      # One run, with the race detector and the coverage profile together: the
+      # suite is the slowest part of this job and running it twice to count
+      # what it covered would be paying twice for the same answer.
+      - name: Test with the race detector
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      # Coverage is not a target to hit, it is a floor to fall through: the
+      # number moves with every change, and a package that quietly loses its
+      # tests is what this catches. The report is kept so a drop can be read
+      # rather than guessed at. Half the tree is Win32 and notification-area
+      # code that skips itself without a desktop, so the floor is a floor on
+      # what can be checked anywhere, not on what the program does.
+      - name: Coverage
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/, "", $3); print $3}')
+          echo "total coverage: ${total}%"
+          awk -v floor=60 -v total="$total" 'BEGIN { exit (total < floor) }' \
+            || { echo "coverage ${total}% is below the 60% floor"; exit 1; }
+
+      - name: Keep the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: ignore
 
       - name: Check for known vulnerabilities
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   windows:
     runs-on: windows-latest
@@ -64,12 +136,12 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # The strict run is in the linux job, where the shell can name the one
-      # package that needs unsafeptr turned off; here the whole tree is checked
-      # with that single analyzer disabled, which is the same set of checks on
-      # the platform the program is written for.
+      # The same program the linux job and `make vet` run, here on the platform
+      # the program is written for: the one package whose unsafeptr findings are
+      # its own business stays the only exception, and the tool refuses to run
+      # at all if that package ever disappears.
       - name: Vet
-        run: go vet -unsafeptr=false ./...
+        run: go run ./tools/vet
 
       # No -race here: the detector needs cgo and therefore gcc, which the
       # windows images do not promise; the race suite runs in the linux job.

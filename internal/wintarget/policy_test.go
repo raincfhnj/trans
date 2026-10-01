@@ -41,7 +41,10 @@ type probe struct {
 	writeErr     error
 	pasteErr     error
 	pasteSent    int
-	idle         bool
+	// pasted is the chord the paste seam was handed, which is what the setting
+	// TRANS_PASTE_KEYS decides.
+	pasted string
+	idle   bool
 	// cancelDuringFocus makes the context done inside the focus wait, which is
 	// where the panel's escape arrives in practice.
 	cancelDuringFocus context.CancelFunc
@@ -99,8 +102,9 @@ func (p *probe) seams() seams {
 			p.calls = append(p.calls, "pause")
 			return nil
 		},
-		paste: func(context.Context, string) (int, error) {
+		paste: func(_ context.Context, chord string) (int, error) {
 			p.calls = append(p.calls, "paste")
+			p.pasted = chord
 			if p.pasteErr != nil {
 				return 0, p.pasteErr
 			}
@@ -155,6 +159,22 @@ func TestASendPastesAndThenPressesReturn(t *testing.T) {
 	expectCalls(t, probe,
 		"snapshot", "activate", "wait-focus", "foreground", "write", "paste",
 		"wait-idle", "foreground", "submit", "pause", "restore", "release")
+}
+
+// The chord that pastes is the one the author's terminal takes, and it is
+// handed on as it was given: a delivery that pasted with a chord of its own
+// choosing would type into panes that never agreed to it.
+func TestThePasteChordIsTheOneTheDeliveryWasGiven(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	if err := deliverWith(context.Background(), seamPointer(probe), 0x1234,
+		"ctrl+shift+v", "a prompt", true); err != nil {
+		t.Fatalf("deliverWith: %v", err)
+	}
+	if probe.pasted != "ctrl+shift+v" {
+		t.Errorf("pasted with %q, want the chord the delivery was given", probe.pasted)
+	}
 }
 
 // Typing pastes the prompt and leaves the last keystroke to the author: the

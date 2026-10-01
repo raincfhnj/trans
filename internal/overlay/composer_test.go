@@ -60,8 +60,8 @@ func TestWithoutAServiceThePopupIsADraftBox(t *testing.T) {
 
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	drive(model, cmd)
-	if len(target.inserted) != 1 || target.inserted[0] != "Bitte behebe den Test" {
-		t.Errorf("target received %v, want the draft as it was written", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != "Bitte behebe den Test" {
+		t.Errorf("target received %v, want the draft as it was written", target.sent())
 	}
 }
 
@@ -99,8 +99,8 @@ func TestABrokenServiceIsReportedAndNothingIsDelivered(t *testing.T) {
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	drive(model, cmd)
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing while the service is broken", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing while the service is broken", target.sent())
 	}
 }
 

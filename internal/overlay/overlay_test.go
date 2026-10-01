@@ -41,11 +41,29 @@ func (r *recordingTranslator) Translate(_ context.Context, draft string) (string
 	return r.english, nil
 }
 
-type recordingTarget struct{ inserted []string }
+// recordingTarget stands in for the window a prompt is delivered into. Its
+// record is written from the panel's own goroutine and read from the test's,
+// so the two meet at the mutex: a test that read the slice while the panel was
+// appending to it would be racing the panel, and would fail under -race on the
+// day the scheduler happened to interleave them.
+type recordingTarget struct {
+	mu       sync.Mutex
+	inserted []string
+}
 
 func (r *recordingTarget) Insert(_ context.Context, text string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.inserted = append(r.inserted, text)
 	return nil
+}
+
+// sent is what reached the window so far, as a copy: the panel may be
+// appending to its own while the test reads this one.
+func (r *recordingTarget) sent() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.inserted...)
 }
 
 func newOverlay(t *testing.T, translator promptflow.Translator, target promptflow.Target) *teatest.TestModel {
@@ -65,6 +83,14 @@ func newOverlayWith(
 	flowOptions ...promptflow.Option,
 ) *teatest.TestModel {
 	t.Helper()
+	// A hint is meant to go by itself after a few seconds; in a test that is a
+	// window to race rather than a promise to keep. The clock is left running
+	// for the tests that make a point of a message going (they set
+	// NoticeLinger themselves) and held for the rest, so "the footer says so"
+	// is a state to find rather than a moment to catch.
+	if options.NoticeLinger == 0 {
+		options.NoticeLinger = time.Minute
+	}
 	return teatest.NewTestModel(
 		t,
 		overlay.New(context.Background(),
@@ -87,7 +113,7 @@ func TestTheCaretIsReportedWhereTheWritingIs(t *testing.T) {
 	teatest.WaitFor(t, overlayUnderTest.Output(), func([]byte) bool {
 		_, _, _, visible := cursor.Where()
 		return visible
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	row, column, lines, _ := cursor.Where()
 	// The writing begins under the header and the box's top border, one column in
@@ -110,7 +136,7 @@ func TestTheCaretIsReportedWhereTheWritingIs(t *testing.T) {
 	teatest.WaitFor(t, overlayUnderTest.Output(), func([]byte) bool {
 		_, column, _, _ := cursor.Where()
 		return column >= 3+len("hallo")+2 && column <= 3+len("hallo")+4
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	closeTheOverlay(t, overlayUnderTest)
 }
@@ -118,17 +144,26 @@ func TestTheCaretIsReportedWhereTheWritingIs(t *testing.T) {
 // A sent prompt leaves the panel open with an empty box, so the next prompt can
 // be written without opening it again. These tests wait for that and close the
 // panel themselves, the way a person does.
+//
+// The deadline is an upper bound on how long a drawn frame may take, not a
+// promise about how fast the drawing is: the whole suite runs its panels side
+// by side, and a machine that is busy — under -race, under -cover, or running
+// the other packages at the same time — takes longer than a few seconds to put
+// the frame on screen. A test that failed there would be measuring the machine
+// rather than the panel.
+const frameTimeout = 15 * time.Second
+
 func waitForTheNextPrompt(t *testing.T, overlayUnderTest *teatest.TestModel) {
 	t.Helper()
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("ready for the next one"))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 }
 
 func closeTheOverlay(t *testing.T, overlayUnderTest *teatest.TestModel) {
 	t.Helper()
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestTheOverlayShowsWhichServiceAndLanguageItWillUse(t *testing.T) {
@@ -137,10 +172,10 @@ func TestTheOverlayShowsWhichServiceAndLanguageItWillUse(t *testing.T) {
 	overlayUnderTest := newOverlay(t, stubTranslator{english: english}, &recordingTarget{})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("deepl")) && bytes.Contains(out, []byte("EN-US"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestSubmittingADraftInsertsTheEnglishTranslationIntoTheTarget(t *testing.T) {
@@ -152,8 +187,8 @@ func TestSubmittingADraftInsertsTheEnglishTranslationIntoTheTarget(t *testing.T)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != english {
-		t.Errorf("target received %v, want one insert of %q", target.inserted, english)
+	if len(target.sent()) != 1 || target.sent()[0] != english {
+		t.Errorf("target received %v, want one insert of %q", target.sent(), english)
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -169,14 +204,14 @@ func TestEscapeSwitchesToNormalModeInsteadOfClosing(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("NORMAL"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // Escape is the only way back out: once to leave insert mode, once to close.
@@ -188,10 +223,10 @@ func TestEscapeTwiceClosesFromNormalMode(t *testing.T) {
 	overlayUnderTest.Type("hallo")
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 }
 
@@ -203,10 +238,10 @@ func TestQIsJustTextWhileTyping(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("quatsch"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestCancellingLeavesTheTargetUntouched(t *testing.T) {
@@ -216,10 +251,10 @@ func TestCancellingLeavesTheTargetUntouched(t *testing.T) {
 	overlayUnderTest := newOverlay(t, stubTranslator{english: english}, target)
 	overlayUnderTest.Type(draft)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing inserted", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing inserted", target.sent())
 	}
 }
 
@@ -233,10 +268,10 @@ func TestAFailedTranslationKeepsTheOverlayOpenAndReportsWhy(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("deepl unreachable"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestABlankDraftIsNotSentAnywhere(t *testing.T) {
@@ -247,10 +282,10 @@ func TestABlankDraftIsNotSentAnywhere(t *testing.T) {
 	overlayUnderTest := newOverlay(t, translatorThatMustNotRun, target)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing inserted", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing inserted", target.sent())
 	}
 }
 
@@ -265,14 +300,14 @@ func TestEnterAddsALineInsteadOfSending(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("erste Zeile")) && bytes.Contains(out, []byte("zweite Zeile"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent by enter alone", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent by enter alone", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestAltEnterSendsLikeCtrlD(t *testing.T) {
@@ -284,8 +319,8 @@ func TestAltEnterSendsLikeCtrlD(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != english {
-		t.Errorf("target received %v, want one insert of %q", target.inserted, english)
+	if len(target.sent()) != 1 || target.sent()[0] != english {
+		t.Errorf("target received %v, want one insert of %q", target.sent(), english)
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -303,12 +338,12 @@ func TestEscapeThenEnterIsNotASend(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	time.Sleep(200 * time.Millisecond)
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestADraftKeepsCharactersOutsideAscii(t *testing.T) {
@@ -339,10 +374,10 @@ func TestWithoutVimEscapeClosesTheOverlay(t *testing.T) {
 	})
 	overlayUnderTest.Type("hallo")
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 }
 
@@ -353,10 +388,10 @@ func TestAnEmptyDraftShowsWhatToDo(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("own language"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 type gatedTranslator struct {
@@ -399,14 +434,14 @@ func TestLiveModeShowsTheEnglishWhileYouWrite(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want a preview only", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want a preview only", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestWithoutLiveModeNothingIsTranslatedUntilYouSend(t *testing.T) {
@@ -422,7 +457,7 @@ func TestWithoutLiveModeNothingIsTranslatedUntilYouSend(t *testing.T) {
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestALatePreviewNeverOverwritesANewerOne(t *testing.T) {
@@ -436,13 +471,13 @@ func TestALatePreviewNeverOverwritesANewerOne(t *testing.T) {
 	overlayUnderTest.Type(" zweite Fassung")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("SECOND"))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	close(translator.release)
 	time.Sleep(300 * time.Millisecond)
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	shown, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
@@ -463,7 +498,7 @@ func TestSendingAfterAPreviewDeliversItWithoutTranslatingAgain(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// Typing may well have cost more than one translation on the way; what
 	// matters is that sending costs none.
@@ -472,8 +507,8 @@ func TestSendingAfterAPreviewDeliversItWithoutTranslatingAgain(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != english {
-		t.Errorf("target received %v, want the previewed translation delivered", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != english {
+		t.Errorf("target received %v, want the previewed translation delivered", target.sent())
 	}
 	if calls := translator.count(); calls != beforeSending {
 		t.Errorf("sending cost %d more translations, want the preview reused",
@@ -525,7 +560,7 @@ func TestSendingWhileANewPreviewIsInFlightNeverDeliversTheOlderEnglish(t *testin
 	overlayUnderTest.Type("Loesche die Datenbank nicht")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Do not delete the database"))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// The draft changes; the second translation starts but has not answered.
 	overlayUnderTest.Type(". Loesche sie doch")
@@ -535,10 +570,10 @@ func TestSendingWhileANewPreviewIsInFlightNeverDeliversTheOlderEnglish(t *testin
 	close(translator.release)
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 {
-		t.Fatalf("target received %v, want exactly one delivery", target.inserted)
+	if len(target.sent()) != 1 {
+		t.Fatalf("target received %v, want exactly one delivery", target.sent())
 	}
-	if delivered := target.inserted[0]; delivered == translator.first {
+	if delivered := target.sent()[0]; delivered == translator.first {
 		t.Errorf("delivered %q, which was translated from the earlier draft", delivered)
 	}
 
@@ -607,7 +642,7 @@ func TestANewDraftCancelsTheTranslationAlreadyRunning(t *testing.T) {
 
 	close(translator.release)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestACancelledTranslationIsNotShownAsAFailure(t *testing.T) {
@@ -641,7 +676,7 @@ func TestACancelledTranslationIsNotShownAsAFailure(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	shown, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
@@ -678,10 +713,10 @@ func TestEscapeClosesAnEmptyDraftFromNormalMode(t *testing.T) {
 	overlayUnderTest := newOverlay(t, stubTranslator{english: english}, target)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc}) // to normal mode
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc}) // nothing to lose, so close
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 }
 
@@ -695,7 +730,7 @@ func TestEscapeClosesAWrittenDraftAndKeepsIt(t *testing.T) {
 	overlayUnderTest.Type("Bitte behebe")
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	if len(drafts.saved) == 0 || drafts.saved[len(drafts.saved)-1] != "Bitte behebe" {
 		t.Errorf("the store was given %v, want the draft kept on the way out", drafts.saved)
@@ -734,17 +769,17 @@ func TestAKeptDraftIsThereAgainWhenTheOverlayOpens(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Bitte behebe den Test"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// It opens at its beginning, so that is where the cursor is and where writing
 	// carries on; the end is a G or an arrow away.
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Gründlich: ")})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Gründlich: Bitte behebe den Test"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestClosingKeepsTheDraftForNextTime(t *testing.T) {
@@ -756,7 +791,7 @@ func TestClosingKeepsTheDraftForNextTime(t *testing.T) {
 	overlayUnderTest.Type("Bitte behebe den Test")
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	if len(drafts.saved) != 1 || drafts.saved[0] != "Bitte behebe den Test" {
 		t.Errorf("the store was given %v, want the draft kept once", drafts.saved)
@@ -774,8 +809,8 @@ func TestASentDraftIsNotKept(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 {
-		t.Fatalf("target received %v, want the prompt delivered", target.inserted)
+	if len(target.sent()) != 1 {
+		t.Fatalf("target received %v, want the prompt delivered", target.sent())
 	}
 	if drafts.cleared != 1 {
 		t.Errorf("the store was cleared %d times, want the sent draft forgotten", drafts.cleared)
@@ -799,11 +834,11 @@ func TestADraftThatCannotBeKeptIsNotSilentlyLost(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("disk full"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// ctrl+c is the way out when even keeping the draft fails.
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // Services charge by the character, and a draft that comes back may be anything —
@@ -824,7 +859,7 @@ func TestAResumedDraftArrivesWithLiveTranslationOff(t *testing.T) {
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Bitte behebe den Test")) &&
 			bytes.Contains(out, []byte("translates it"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" gründlich")})
 	time.Sleep(300 * time.Millisecond)
@@ -836,10 +871,10 @@ func TestAResumedDraftArrivesWithLiveTranslationOff(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlL})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // Closing the popup hangs up on the program, and ctrl+c never reaches the close
@@ -896,7 +931,7 @@ func TestARestoredDraftSaysThatItWasResumed(t *testing.T) {
 	// came from until the author touches it.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("resumed draft"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// A draft that came back opens at its beginning, so that is where writing
 	// carries on, and the header stops calling it resumed.
@@ -905,10 +940,10 @@ func TestARestoredDraftSaysThatItWasResumed(t *testing.T) {
 		tail := out[max(0, len(out)-400):]
 		return bytes.Contains(tail, []byte("!Bitte behebe den Test")) &&
 			!bytes.Contains(tail, []byte("resumed"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestADraftCanBeThrownAwayWithOneKey(t *testing.T) {
@@ -919,7 +954,7 @@ func TestADraftCanBeThrownAwayWithOneKey(t *testing.T) {
 		overlay.Options{Service: "deepl", Language: "EN-US", Drafts: drafts})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Ein alter Entwurf"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlU})
 	overlayUnderTest.Type("Etwas Neues")
@@ -927,14 +962,14 @@ func TestADraftCanBeThrownAwayWithOneKey(t *testing.T) {
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		tail := out[max(0, len(out)-500):]
 		return bytes.Contains(tail, []byte("Etwas Neues")) && !bytes.Contains(tail, []byte("alter Entwurf"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	if drafts.cleared != 1 {
 		t.Errorf("the store was cleared %d times, want the thrown-away draft forgotten", drafts.cleared)
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func confirmingOverlay(t *testing.T, translator promptflow.Translator, target promptflow.Target) *teatest.TestModel {
@@ -957,17 +992,17 @@ func TestWithConfirmationTheEnglishIsShownBeforeItIsSent(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 0 {
-		t.Fatalf("target received %v, want nothing until it is confirmed", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Fatalf("target received %v, want nothing until it is confirmed", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != english {
-		t.Errorf("target received %v, want the confirmed translation", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != english {
+		t.Errorf("target received %v, want the confirmed translation", target.sent())
 	}
 	if calls := translator.count(); calls != 1 {
 		t.Errorf("the translator was called %d times, want the shown translation reused", calls)
@@ -985,7 +1020,7 @@ func TestConfirmationCanBeTurnedDownToKeepWriting(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
 	overlayUnderTest.Type(" bitte")
@@ -993,13 +1028,13 @@ func TestConfirmationCanBeTurnedDownToKeepWriting(t *testing.T) {
 	// Back in the draft, with the writing intact and nothing sent.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Test bitte"))
-	}, teatest.WithDuration(3*time.Second))
-	if len(target.inserted) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.inserted)
+	}, teatest.WithDuration(frameTimeout))
+	if len(target.sent()) != 0 {
+		t.Errorf("target received %v, want nothing sent", target.sent())
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestWithoutConfirmationSendingStaysOneKey(t *testing.T) {
@@ -1011,8 +1046,8 @@ func TestWithoutConfirmationSendingStaysOneKey(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 {
-		t.Errorf("target received %v, want it delivered on the first key", target.inserted)
+	if len(target.sent()) != 1 {
+		t.Errorf("target received %v, want it delivered on the first key", target.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -1035,10 +1070,10 @@ func TestTheHeaderShowsWhatTheKeyHasSpent(t *testing.T) {
 	// Compact, because the header is narrow: 12.3k of 1M.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("12.3k/1M chars"))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestAServiceWithoutAnAllowanceShowsNoCount(t *testing.T) {
@@ -1049,7 +1084,7 @@ func TestAServiceWithoutAnAllowanceShowsNoCount(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	shown, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
@@ -1083,10 +1118,10 @@ func TestPastingFarMoreThanAPromptSaysSo(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("680 characters"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestTheWarningGoesWhenTheDraftIsShortAgain(t *testing.T) {
@@ -1100,16 +1135,16 @@ func TestTheWarningGoesWhenTheDraftIsShortAgain(t *testing.T) {
 	})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("characters"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlU})
 	overlayUnderTest.Type("kurz")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("kurz"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	last, err := io.ReadAll(overlayUnderTest.FinalOutput(t))
 	if err != nil {
@@ -1139,7 +1174,7 @@ func TestNothingIsTranslatedWhileTheDraftIsTooLong(t *testing.T) {
 	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestALongDraftCanStillBeSent(t *testing.T) {
@@ -1155,8 +1190,8 @@ func TestALongDraftCanStillBeSent(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 {
-		t.Errorf("target received %v, want the prompt sent anyway", target.inserted)
+	if len(target.sent()) != 1 {
+		t.Errorf("target received %v, want the prompt sent anyway", target.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -1185,11 +1220,11 @@ func TestLiveModeShowsAPulseWhileItIsTranslating(t *testing.T) {
 			}
 		}
 		return len(seen) >= 2
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	close(translator.release)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func TestWithoutThePulseLiveModeSaysSoQuietly(t *testing.T) {
@@ -1208,7 +1243,7 @@ func TestWithoutThePulseLiveModeSaysSoQuietly(t *testing.T) {
 
 	close(translator.release)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	shown, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
@@ -1233,7 +1268,7 @@ func TestThePulseRestsWhenNothingIsBeingTranslated(t *testing.T) {
 	time.Sleep(700 * time.Millisecond)
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
 	shown, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
@@ -1272,7 +1307,7 @@ func TestAFastTranslationStillShowsAWholeBreath(t *testing.T) {
 	}, teatest.WithDuration(4*time.Second))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 func switchableOverlay(t *testing.T, sending, typing promptflow.Target, options overlay.Options) *teatest.TestModel {
@@ -1295,16 +1330,16 @@ func TestCtrlRSwitchesToTypingWithoutSending(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("fills the input"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(typing.inserted) != 1 || typing.inserted[0] != english {
-		t.Errorf("the typing target received %v, want the prompt", typing.inserted)
+	if len(typing.sent()) != 1 || typing.sent()[0] != english {
+		t.Errorf("the typing target received %v, want the prompt", typing.sent())
 	}
-	if len(sending.inserted) != 0 {
-		t.Errorf("the sending target received %v, want nothing", sending.inserted)
+	if len(sending.sent()) != 0 {
+		t.Errorf("the sending target received %v, want nothing", sending.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -1320,11 +1355,11 @@ func TestCtrlRSwitchesBackToSending(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(sending.inserted) != 1 {
-		t.Errorf("the sending target received %v, want the prompt", sending.inserted)
+	if len(sending.sent()) != 1 {
+		t.Errorf("the sending target received %v, want the prompt", sending.sent())
 	}
-	if len(typing.inserted) != 0 {
-		t.Errorf("the typing target received %v, want nothing", typing.inserted)
+	if len(typing.sent()) != 0 {
+		t.Errorf("the typing target received %v, want nothing", typing.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)
@@ -1351,8 +1386,8 @@ func TestCtrlLTurnsLiveTranslationOnForThisPrompt(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlL})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(english))
-	}, teatest.WithDuration(3*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }

@@ -71,6 +71,9 @@ type captureProbe struct {
 	copies   bool
 	chordErr error
 	pressed  string
+	// fronted is the handle the capture brought forward, which is the window
+	// the chord was pressed in.
+	fronted uintptr
 }
 
 func (probe *captureProbe) ports() selectionPorts {
@@ -80,8 +83,9 @@ func (probe *captureProbe) ports() selectionPorts {
 		snapshot: probe.fake.snapshot,
 		restore:  probe.fake.restore,
 		release:  probe.fake.release,
-		front: func(uintptr) error {
+		front: func(handle uintptr) error {
 			probe.calls = append(probe.calls, "front")
+			probe.fronted = handle
 			return nil
 		},
 		copyKeys: func(_ context.Context, chord string) error {
@@ -127,6 +131,23 @@ func TestACaptureReadsWhatThePaneCopied(t *testing.T) {
 	}
 	if want := []string{"front", "chord", "wait-copy"}; !equalCalls(probe.calls, want) {
 		t.Errorf("the capture called %v, want %v", probe.calls, want)
+	}
+}
+
+// The handle a capture is given is the window the chord was pressed in, and it
+// is that window the pane is brought forward in: a capture that brought
+// anything else forward would copy out of whatever happened to be in front.
+func TestACaptureBringsForwardTheWindowItWasGiven(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeClipboard{holds: "what was there before"}
+	probe := &captureProbe{fake: fake, copies: true}
+
+	if _, err := captureSelection(context.Background(), probe.ports(), 0xfeed, "ctrl+shift+c"); err != nil {
+		t.Fatalf("captureSelection: %v", err)
+	}
+	if probe.fronted != 0xfeed {
+		t.Errorf("brought forward %#x, want the window the capture was given", probe.fronted)
 	}
 }
 

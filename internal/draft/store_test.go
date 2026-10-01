@@ -1,3 +1,6 @@
+// The portable half of the store's tests: nothing here needs access bits or
+// symbolic links, so it runs on every platform — including the one the panel
+// ships on. The tests that do need a POSIX filesystem are in draft_test.go.
 package draft_test
 
 import (

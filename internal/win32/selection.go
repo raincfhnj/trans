@@ -166,12 +166,6 @@ func Pause(ctx context.Context, howLong time.Duration) error {
 	}
 }
 
-// pause is the same wait for the callers inside this package, where the name
-// reads better next to the waits that follow it.
-func pause(ctx context.Context, howLong time.Duration) error {
-	return Pause(ctx, howLong)
-}
-
 // note writes down what a capture or a delivery did about a clipboard it could
 // not take safely, a chord that brought nothing back, or keys Windows refused.
 // There is nobody to tell at the moment it happens — the caller is told by the

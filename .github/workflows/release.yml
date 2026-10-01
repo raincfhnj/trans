@@ -8,13 +8,22 @@ on:
 
 # The publish step is the only one that writes: it creates the release and
 # uploads the archives under the tag. A dispatch without a tag never reaches
-# it.
+# it, and the build steps never need to write at all — so the write permission
+# sits on the job that publishes rather than on the whole workflow.
 permissions:
-  contents: write
+  contents: read
+
+# Two tags pushed together, or a tag and its re-push, are not worth racing:
+# what is published should be the newest thing pushed under that name.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -32,6 +41,26 @@ jobs:
 
       - name: Build the archives
         run: make release VERSION=${{ steps.version.outputs.version || 'dev' }}
+
+      # What the manifests promise, checked rather than assumed: two archives
+      # carrying the version without its leading v, four files at the root of
+      # each — no folder above the executables, which would break the scoop
+      # `bin` paths and the winget NestedInstallerFiles — and one checksum file
+      # listing both of them, in the format `sha256sum` writes.
+      - name: Check what was built
+        run: |
+          version="${{ steps.version.outputs.version || 'dev' }}"
+          for arch in amd64 arm64; do
+            archive="dist/trans-window-${version}-windows-${arch}.zip"
+            test -f "$archive" || { echo "missing $archive"; exit 1; }
+            listing=$(unzip -Z1 "$archive" | sort | tr '\n' ' ')
+            want="LICENSE README.md trans-window.exe trans-windowd.exe "
+            [ "$listing" = "$want" ] || { echo "$archive holds: $listing"; echo "want: $want"; exit 1; }
+          done
+          grep -q "trans-window-${version}-windows-amd64.zip" dist/SHA256SUMS.txt
+          grep -q "trans-window-${version}-windows-arm64.zip" dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          echo "both archives hold the four files and match their checksums"
 
       # A dispatch may run on a branch, where there is no tag to publish
       # under: the archives are kept as a workflow artifact instead, so the

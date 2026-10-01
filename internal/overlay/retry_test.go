@@ -94,7 +94,7 @@ func TestCtrlTTranslatesOnDemandWithLiveOff(t *testing.T) {
 	if !strings.Contains(plain(model.View()), english) {
 		t.Errorf("the translation is not shown:\n%s", plain(model.View()))
 	}
-	if len(target.inserted) != 0 {
-		t.Errorf("ctrl+t delivered %v, want it only translated", target.inserted)
+	if len(target.sent()) != 0 {
+		t.Errorf("ctrl+t delivered %v, want it only translated", target.sent())
 	}
 }

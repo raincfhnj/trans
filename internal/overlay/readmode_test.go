@@ -72,15 +72,15 @@ func TestReadModeCopiesTheResultAndClosesOnEscapeWithTheHintStillUp(t *testing.T
 	overlayUnderTest.Type(draft)
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(readBack))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("copied to clipboard · esc closes"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
-	if len(target.inserted) != 1 || target.inserted[0] != readBack {
-		t.Errorf("target received %v, want the result copied exactly once", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != readBack {
+		t.Errorf("target received %v, want the result copied exactly once", target.sent())
 	}
 
 	// The panel is still there, with the draft still in it — copying does not
@@ -88,12 +88,12 @@ func TestReadModeCopiesTheResultAndClosesOnEscapeWithTheHintStillUp(t *testing.T
 	overlayUnderTest.Type("!")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Test!"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	// Escape takes the whole panel away, hint or no hint: a read-mode panel
 	// keeps nothing that escape could be needed to leave behind.
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // A read-mode draft is text that arrived, not a prompt being written; it is
@@ -144,10 +144,10 @@ func TestReadModeTranslatesWhatItOpenedWithAtOnce(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte(draft)) && bytes.Contains(out, []byte(readBack))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
 // A capture that found nothing — no selection, no clipboard — is the reason
@@ -187,8 +187,8 @@ func TestReadModeAsksForNothingBeforeItCopies(t *testing.T) {
 	model, cmd = model.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	model = drive(model, cmd)
 
-	if len(target.inserted) != 1 || target.inserted[0] != readBack {
-		t.Errorf("target received %v, want the result copied on the first key", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != readBack {
+		t.Errorf("target received %v, want the result copied on the first key", target.sent())
 	}
 	// A confirmation would have shown the English first, waiting to be agreed
 	// to. Read mode copies and the draft box is all there is.

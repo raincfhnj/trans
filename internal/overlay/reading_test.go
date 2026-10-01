@@ -263,14 +263,14 @@ func TestSendingFromReadingWhileConfirmingDeliversTheEnglish(t *testing.T) {
 
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("EN(erste Fassung)"))
-	}, teatest.WithDuration(2*time.Second))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyTab})
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
-	if len(target.inserted) != 1 || target.inserted[0] != "EN(erste Fassung)" {
-		t.Errorf("target received %v, want the confirmed English delivered once", target.inserted)
+	if len(target.sent()) != 1 || target.sent()[0] != "EN(erste Fassung)" {
+		t.Errorf("target received %v, want the confirmed English delivered once", target.sent())
 	}
 
 	closeTheOverlay(t, overlayUnderTest)

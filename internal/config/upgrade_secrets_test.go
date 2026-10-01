@@ -120,6 +120,83 @@ func TestAScopedKeyKeepsItsName(t *testing.T) {
 	}
 }
 
+// The scoped key is looked for first and the plain one after it, the order the
+// settings are read in: a key filed for one service is that service's, and a
+// key filed under the plain name is still found for whichever service is
+// chosen today.
+func TestTheStoredKeyIsFoundUnderTheScopedNameFirst(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("DPAPI only exists on Windows")
+	}
+	directory := writeDotenv(t, "TRANS_PROVIDER=deepl\n")
+	if err := secrets.Store(directory, "TRANS_API_KEY", []byte("the plain one"), secrets.CurrentUser); err != nil {
+		t.Fatalf("storing the plain key: %v", err)
+	}
+	if err := secrets.Store(directory, "TRANS_DEEPL_API_KEY", []byte("the deepl one"), secrets.CurrentUser); err != nil {
+		t.Fatalf("storing the scoped key: %v", err)
+	}
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_CONFIG_DIR": directory}))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	config.ResolveKey(&settings)
+	if settings.Options.APIKey != "the deepl one" {
+		t.Errorf("the key came back as %q, want the one filed for the chosen service", settings.Options.APIKey)
+	}
+
+	// With no service named, the plain name is the only one there is.
+	settings, err = config.Load(envFrom(map[string]string{"TRANS_CONFIG_DIR": directory}))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	settings.Provider = ""
+	settings.Options.APIKey = ""
+	config.ResolveKey(&settings)
+	if settings.Options.APIKey != "the plain one" {
+		t.Errorf("the key came back as %q, want the one filed under the plain name", settings.Options.APIKey)
+	}
+}
+
+// A key the settings already carry is left alone: the store is a fallback, not
+// an override, and the environment wins over both.
+func TestAKeyThatIsAlreadyThereIsLeftAlone(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("DPAPI only exists on Windows")
+	}
+	directory := writeDotenv(t, "TRANS_PROVIDER=deepl\n")
+	if err := secrets.Store(directory, "TRANS_DEEPL_API_KEY", []byte("from the store"), secrets.CurrentUser); err != nil {
+		t.Fatalf("storing the key: %v", err)
+	}
+
+	settings, err := config.Load(envFrom(map[string]string{
+		"TRANS_CONFIG_DIR":    directory,
+		"TRANS_DEEPL_API_KEY": "from the environment",
+	}))
+	if err != nil {
+		t.Fatalf("loading: %v", err)
+	}
+	config.ResolveKey(&settings)
+	if settings.Options.APIKey != "from the environment" {
+		t.Errorf("the key came back as %q, want the one the settings already had", settings.Options.APIKey)
+	}
+}
+
+// What the settings window shows for TRANS_KEYS: the protection that is on
+// unless it was turned off, and the plain word when it was.
+func TestTheKeyModeNamesWhatIsInForce(t *testing.T) {
+	t.Parallel()
+
+	protection := config.Settings{}
+	if mode := protection.KeysMode(); mode != "dpapi" {
+		t.Errorf("with nothing set the mode is %q, want dpapi", mode)
+	}
+	plain := config.Settings{Keys: "plain"}
+	if mode := plain.KeysMode(); mode != "plain" {
+		t.Errorf("with TRANS_KEYS=plain the mode is %q, want plain", mode)
+	}
+}
+
 // TRANS_KEYS=plain is how a user says the file is theirs to keep: nothing
 // moves, nothing breaks.
 func TestPlainModeLeavesTheFileAlone(t *testing.T) {

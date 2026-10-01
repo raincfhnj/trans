@@ -172,15 +172,23 @@ func TestSegmentedKeepsEarlierSentencesWhileTheLastOneIsWritten(t *testing.T) {
 
 // Two previews can overlap while a draft is written; the same sentence must not
 // be paid for twice.
+//
+// One sentence, not two: with the sentence already translated a moment earlier
+// the second caller would be served from the store and the test would pass
+// whether or not two calls were ever joined. Here the sentence is in flight and
+// blocked, so the only way the second caller can answer is by waiting for the
+// first — and a second start is what the translator's own channel reports.
 func TestSegmentedSendsASentenceOnceEvenWhenAskedTwiceAtOnce(t *testing.T) {
 	t.Parallel()
 	spy := &blockingTranslator{started: make(chan struct{}, 4), release: make(chan struct{})}
 	segmented := translation.Segmented(spy)
 
-	const draft = "Der Test schlaegt fehl. Bitte behebe ihn."
+	const draft = "Der Test schlaegt fehl."
 	results := make(chan string, 2)
+	entered := make(chan struct{}, 2)
 	for range 2 {
 		go func() {
+			entered <- struct{}{}
 			translated, err := segmented.Translate(context.Background(), draft)
 			if err != nil {
 				t.Errorf("Translate returned unexpected error: %v", err)
@@ -189,16 +197,45 @@ func TestSegmentedSendsASentenceOnceEvenWhenAskedTwiceAtOnce(t *testing.T) {
 		}()
 	}
 
+	// The first call is in flight and held there.
 	<-spy.started
+	<-entered
+	<-entered
+	waitFor(t, func() bool { return translation.Waiting(segmented) == 1 })
+
+	// The second caller joins that call rather than starting one of its own:
+	// a start here would arrive at once, because Translate reaches the
+	// translator before it waits for anything.
+	select {
+	case <-spy.started:
+		t.Error("the second caller paid for the sentence again instead of waiting for the first")
+	case <-time.After(200 * time.Millisecond):
+	}
+
 	close(spy.release)
 	first, second := <-results, <-results
 
 	if first != second {
 		t.Errorf("the two callers got %q and %q, want the same translation", first, second)
 	}
-	if calls := spy.count(); calls > 2 {
-		t.Errorf("the translator was called %d times for 2 sentences, want each sent once", calls)
+	if calls := spy.count(); calls != 1 {
+		t.Errorf("the translator was called %d times for one sentence, want it sent once", calls)
 	}
+}
+
+// waitFor polls until the condition holds, and fails the test when it never
+// does: what a test waits on is a state, not a moment, so nothing here sleeps
+// for a fixed time and hopes.
+func waitFor(t *testing.T, holds func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if holds() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the state this test waits for never arrived")
 }
 
 type blockingTranslator struct {
@@ -349,7 +386,11 @@ func TestSegmentedDoesNotHandOnACancelledResult(t *testing.T) {
 	}()
 	<-spy.entered
 
-	// The draft moves on: the preview is abandoned while the author sends.
+	// The draft moves on: the preview is abandoned while the author sends. The
+	// send joins the call already in flight — one request, two callers — which
+	// is the state this test is about, and it is waited for rather than slept
+	// past: a send that arrived late would never see the cancelled call and the
+	// test would pass without exercising anything.
 	sent := make(chan string, 1)
 	go func() {
 		translated, err := segmented.Translate(context.Background(), draft)
@@ -359,7 +400,7 @@ func TestSegmentedDoesNotHandOnACancelledResult(t *testing.T) {
 		sent <- translated
 	}()
 
-	time.Sleep(50 * time.Millisecond)
+	waitFor(t, func() bool { return translation.Sharing(segmented) == 1 })
 	cancel()
 	close(spy.release)
 

@@ -34,6 +34,7 @@ const (
 	maxDraftVar  = "TRANS_MAX_DRAFT"
 	pulseVar     = "TRANS_PULSE"
 	logoVar      = "TRANS_LOGO"
+	trayVar      = "TRANS_TRAY"
 	HotkeyVar    = "TRANS_HOTKEY"
 	// SelectHotkeyVar opens the translation of a selection; ConfigHotkeyVar the
 	// settings window. SelectCopyVar is the chord that copies a selection for
@@ -94,7 +95,11 @@ type Settings struct {
 	Confirm   bool
 	Pulse     bool
 	Logo      bool
-	MaxDraft  int
+	// Tray is whether the daemon puts an icon in the notification area at all.
+	// It is read here rather than by the daemon alone so that every setting of
+	// this program is read in one place.
+	Tray     bool
+	MaxDraft int
 	// PasteKeys is the chord a terminal takes for a paste, for the panel on
 	// Windows. What is left empty is worked out from the terminal in front.
 	PasteKeys string
@@ -166,6 +171,7 @@ func Load(getenv func(string) string) (Settings, error) {
 		Confirm:    given.flag(ConfirmVar, false),
 		Pulse:      given.flag(pulseVar, true),
 		Logo:       given.flag(logoVar, true),
+		Tray:       given.flag(trayVar, true),
 		MaxDraft:   given.number(maxDraftVar),
 		PasteKeys:  lookup(PasteVar),
 		Keys:       orDefault(lookup(KeysVar), keysDPAPI),

@@ -329,6 +329,7 @@ func TestAValueThatIsNeitherOnNorOffIsRefused(t *testing.T) {
 		"TRANS_KEEP_DRAFT",
 		"TRANS_PULSE",
 		"TRANS_HISTORY",
+		"TRANS_TRAY",
 	} {
 		environment := map[string]string{
 			"TRANS_TARGET": "w1:p1",
@@ -355,6 +356,32 @@ func TestADraftLimitThatIsNotANumberIsRefused(t *testing.T) {
 	}))
 	if err == nil || !strings.Contains(err.Error(), "TRANS_MAX_DRAFT") {
 		t.Errorf("Load returned %v, want the unreadable draft limit refused by name", err)
+	}
+}
+
+// The tray is on unless it is turned off, and turning it off is a setting like
+// any other: it is read here rather than by the daemon looking at the
+// environment a second time.
+func TestTheTrayIsOnUnlessTurnedOff(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if !settings.Tray {
+		t.Error("Tray is false, want the icon on by default")
+	}
+
+	off, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET": "w1:p3",
+		"TRANS_TRAY":   "0",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if off.Tray {
+		t.Error("Tray is true, want TRANS_TRAY=0 to leave the icon out")
 	}
 }
 

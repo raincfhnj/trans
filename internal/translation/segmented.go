@@ -50,6 +50,12 @@ type call struct {
 	done chan struct{}
 	text string
 	err  error
+	// waiters is how many callers are waiting on this call rather than sending
+	// a request of their own. It is guarded by the store's mutex, and it is
+	// what makes the sharing visible: one caller means a sentence is being
+	// translated, more than one means the same sentence was asked for twice
+	// and paid for once.
+	waiters int
 }
 
 // Segmented translates through the cache. The cache is the session's own: it
@@ -123,6 +129,9 @@ func (s *segmented) translateOnce(ctx context.Context, wanted request) (string, 
 			s.mu.Unlock()
 			return s.send(ctx, wanted, running)
 		}
+		// This caller joins the request already in flight instead of paying for
+		// the sentence again.
+		running.waiters++
 		s.mu.Unlock()
 
 		select {

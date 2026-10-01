@@ -40,7 +40,10 @@ type probe struct {
 	losesFocus   bool
 	writeErr     error
 	pasteErr     error
-	pasteSent    int
+	// pauseErr is what the named wait answers with, which is how a wait that
+	// cannot happen — a cancelled context under it — is written down.
+	pauseErr  error
+	pasteSent int
 	// pasted is the chord the paste seam was handed, which is what the setting
 	// TRANS_PASTE_KEYS decides.
 	pasted string
@@ -100,7 +103,7 @@ func (p *probe) seams() seams {
 		},
 		pause: func(context.Context, time.Duration) error {
 			p.calls = append(p.calls, "pause")
-			return nil
+			return p.pauseErr
 		},
 		paste: func(_ context.Context, chord string) (int, error) {
 			p.calls = append(p.calls, "paste")
@@ -376,6 +379,88 @@ func TestADeliveryWithNothingToDoTouchesNothing(t *testing.T) {
 				t.Errorf("the delivery did %v, want nothing at all", probe.calls)
 			}
 		})
+	}
+}
+
+// A delivery that was already cancelled touches nothing: the panel closed
+// before any of this began, and the clipboard is not this program's to borrow.
+func TestADeliveryThatWasAlreadyCancelledTouchesNothing(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := deliverWith(ctx, seamPointer(probe), 0x1234, "ctrl+v", "a prompt", true)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the delivery answered %v, want the cancellation", err)
+	}
+	if len(probe.calls) != 0 {
+		t.Errorf("a cancelled delivery did %v, want it to touch nothing", probe.calls)
+	}
+}
+
+// A window that cannot be brought forward stops the delivery before anything is
+// written: a key sent now would land in whatever has the keyboard.
+func TestAnActivationThatFailsStopsBeforeAnythingIsWritten(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	refused := errors.New("the window could not be brought forward")
+	probe.activateErr = refused
+
+	err := deliverWith(context.Background(), seamPointer(probe), 0x1234, "ctrl+v", "a prompt", true)
+
+	if !errors.Is(err, refused) {
+		t.Errorf("the delivery answered %v, want the failure to activate", err)
+	}
+	if probe.called("write") || probe.called("paste") || probe.called("submit") {
+		t.Errorf("the delivery did %v after failing to bring the window forward", probe.calls)
+	}
+}
+
+// A wait the panel cancelled is the panel's own answer, not a window that would
+// not come forward: saying "lost focus" would report something that never
+// happened.
+func TestACancellationDuringTheFocusWaitIsNotALostFocus(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	probe.comesForward = false
+	ctx, cancel := context.WithCancel(context.Background())
+	probe.cancelDuringFocus = cancel
+
+	err := deliverWith(ctx, seamPointer(probe), 0x1234, "ctrl+v", "a prompt", true)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the delivery answered %v, want the cancellation", err)
+	}
+	if errors.Is(err, errLostFocus) {
+		t.Error("a cancelled wait was reported as a window that lost focus")
+	}
+	if probe.called("write") {
+		t.Errorf("the delivery did %v after the panel cancelled it", probe.calls)
+	}
+}
+
+// A wait that refuses stops the delivery rather than pressing return into a
+// window that was never settled.
+func TestAPauseThatRefusesStopsTheDelivery(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	probe.idle = false // so the delivery waits for the pane to finish reading
+	refused := errors.New("the wait was cancelled")
+	probe.pauseErr = refused
+
+	err := deliverWith(context.Background(), seamPointer(probe), 0x1234, "ctrl+v", "a prompt", true)
+
+	if !errors.Is(err, refused) {
+		t.Errorf("the delivery answered %v, want the refused wait", err)
+	}
+	if probe.called("submit") {
+		t.Errorf("the return was pressed after a refused wait: %v", probe.calls)
 	}
 }
 

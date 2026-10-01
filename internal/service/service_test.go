@@ -73,14 +73,18 @@ func TestAServiceThatCannotBeBuiltSaysSoAndRefusesToTranslate(t *testing.T) {
 }
 
 // A command needs no key, so setting one is enough to choose it: there is nothing
-// else it could mean.
+// else it could mean. The command is the platform's own smallest one — `sed` on
+// a Unix, `findstr` on Windows — because this is a test of which service is
+// chosen, and it has to run on the system the program ships on rather than skip
+// there.
 func TestACommandOnItsOwnPicksTheLocalService(t *testing.T) {
+	command, want := "sed 's/behebe/fix/'", "Bitte fix es"
 	if runtime.GOOS == "windows" {
-		t.Skip("the command in this test is a unix program")
+		command, want = "findstr .", "Bitte behebe es"
 	}
 
 	chosen := Choose(&config.Settings{
-		Options: translation.Options{Command: "sed 's/behebe/fix/'", TargetLanguage: "EN-US"},
+		Options: translation.Options{Command: command, TargetLanguage: "EN-US"},
 	})
 
 	if chosen.Name != "cmd" {
@@ -97,7 +101,7 @@ func TestACommandOnItsOwnPicksTheLocalService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Translate returned unexpected error: %v", err)
 	}
-	if translated != "Bitte fix es" {
+	if translated != want {
 		t.Errorf("Translate returned %q, want what the command answered", translated)
 	}
 }

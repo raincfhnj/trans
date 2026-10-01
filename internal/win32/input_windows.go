@@ -38,7 +38,7 @@ func ClipboardText() string {
 	// The address is the clipboard's own memory and is valid until the
 	// CloseClipboard above, which is why the reading happens here rather than
 	// from anything the handle is kept in.
-	return syscall.UTF16ToString(cellsAt(pointer, size/2))
+	return syscall.UTF16ToString(locked[uint16](pointer, size/2))
 }
 
 // SetClipboardText puts text on the clipboard. A prompt is delivered by pasting
@@ -67,7 +67,7 @@ func SetClipboardText(text string) error {
 		call(procGlobalFree, handle)
 		return lastError("GlobalLock")
 	}
-	copy(cellsAt(pointer, len(units)), units)
+	copy(locked[uint16](pointer, len(units)), units)
 	call(procGlobalUnlock, handle)
 
 	// The clipboard owns the memory from here on: what SetClipboardData accepts
@@ -266,11 +266,3 @@ func sendKeys(events []keyInput) (int, error) {
 // in one unbroken run can be read as a single keystroke by the program drawing
 // the console.
 const keyGap = 15 * time.Millisecond
-
-// cellsAt is the memory GlobalLock handed back, seen as the characters it
-// holds. The address is Windows's, not the collector's: nothing here can keep
-// it alive and nothing needs to — it is valid until CloseClipboard, and it is
-// never kept past the call that returned it.
-func cellsAt(address uintptr, units int) []uint16 {
-	return unsafe.Slice((*uint16)(unsafe.Pointer(address)), units) //nolint:gosec,govet // the address belongs to the clipboard
-}

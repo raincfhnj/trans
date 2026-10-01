@@ -49,7 +49,7 @@ func SnapshotClipboard() (ClipboardSnapshot, error) {
 		if id == 0 {
 			break
 		}
-		if _, handleShaped := unrepeatableFormats[id]; !handleShaped {
+		if !handleShaped(id) {
 			if memory, err := copyFormat(id); err == nil {
 				snapshot.formats = append(snapshot.formats, clipboardFormat{id: id, memory: memory})
 			}
@@ -199,14 +199,27 @@ var copiedFormats = map[uint32]int{
 // A bitmap is not in this map because it is copied with CopyImage; when that
 // fails it still comes back as CF_DIB or CF_DIBV5, which are memory.
 var unrepeatableFormats = map[uint32]string{
-	cfPalette:      "a colour palette",
-	cfMetafilePict: "a metafile picture",
-	cfEnhMetafile:  "an enhanced metafile",
-	cfDSPBitmap:    "a private bitmap",
-	cfOwnerDisplay: "a drawing only the window that put it there can render",
-	cfDSPText:      "a private text format",
-	cfGDIObj:       "a graphics object",
-	cfPrivate:      "a private format",
+	cfPalette:         "a colour palette",
+	cfMetafilePict:    "a metafile picture",
+	cfEnhMetafile:     "an enhanced metafile",
+	cfDSPMetafilePict: "a private metafile picture",
+	cfDSPEnhMetafile:  "a private enhanced metafile",
+	cfDSPBitmap:       "a private bitmap",
+	cfOwnerDisplay:    "a drawing only the window that put it there can render",
+	cfDSPText:         "a private text format",
+	cfPrivate:         "a private format",
+}
+
+// handleShaped says whether a format is a handle to something rather than a
+// block of memory. The named ones are above; the ranges are the ones Windows
+// keeps for handles by definition — a graphics object, and an application's own
+// private format — where a format that looks like memory can be a handle in
+// disguise, which is exactly what must not be locked.
+func handleShaped(id uint32) bool {
+	if _, named := unrepeatableFormats[id]; named {
+		return true
+	}
+	return id >= cfGDIObjectFirst && id <= cfGDIObjectLast
 }
 
 // hasFormat says whether a format was copied out of the clipboard. A format the
@@ -224,10 +237,21 @@ func (snapshot *clipboardSnapshot) hasFormat(id uint32) bool {
 // copyFormat makes a private copy of the clipboard's memory for one format. The
 // clipboard's own handle is borrowed and released again: GlobalLock counts its
 // uses, and the block itself still belongs to the clipboard until it is closed.
+//
+// The size is asked for before the block is locked, and that order is the
+// point: a format whose data is not a block of global memory — a GDI object,
+// an owner-rendered format, anything another program registered for a handle of
+// its own — answers no size, and locking one would read a handle as an address.
+// That is not a theoretical mistake: it is how a clipboard holding a drawing
+// takes the process down with it.
 func copyFormat(id uint32) (uintptr, error) {
 	handle := call(procGetClipboardData, uintptr(id))
 	if handle == 0 {
 		return 0, errors.New("the clipboard no longer holds that format")
+	}
+	size := int(call(procGlobalSize, handle))
+	if size <= 0 {
+		return 0, errors.New("the clipboard's data is not memory, so it was left alone")
 	}
 	pointer := call(procGlobalLock, handle)
 	if pointer == 0 {
@@ -235,10 +259,6 @@ func copyFormat(id uint32) (uintptr, error) {
 	}
 	defer call(procGlobalUnlock, handle)
 
-	size := int(call(procGlobalSize, handle))
-	if size <= 0 {
-		return 0, errors.New("the clipboard's memory has no size")
-	}
 	memory := call(procGlobalAlloc, gmemMoveable, uintptr(size))
 	if memory == 0 {
 		return 0, lastError("GlobalAlloc")
@@ -248,40 +268,40 @@ func copyFormat(id uint32) (uintptr, error) {
 		call(procGlobalFree, memory)
 		return 0, lastError("GlobalLock")
 	}
-	copy(cells(copied, size), cells(pointer, size))
+	copy(locked[byte](copied, size), locked[byte](pointer, size))
 	call(procGlobalUnlock, memory)
 	return memory, nil
 }
 
 // copyBitmap copies a picture off the clipboard with CopyImage, which is the
-// one call that copies a handle-shaped format at all. LR_COPYRETURNORG hands
-// the original back when it can be handed back — which is exact, and is what a
-// bitmap made by CreateDIBSection needs — and a converted copy is taken when it
-// cannot. The copy belongs to this program, not to the clipboard, so it is
-// deleted with DeleteObject unless a restore hands it over.
+// one call that copies a handle-shaped format at all.
+//
+// The copy asked for is a device-independent section of its own, and never
+// LR_COPYRETURNORG: that flag hands the original back when it can, and the
+// original belongs to the clipboard — putting it back after EmptyClipboard has
+// freed it, or deleting it here, would be using a handle twice. A bitmap that
+// cannot be copied this way is refused, and a clipboard holding one is left
+// untouched rather than emptied.
 func copyBitmap(handle uintptr) (uintptr, error) {
-	copied := call(procCopyImage, handle, imageBitmap, 0, 0, lrCopyReturnOrg)
-	if copied == 0 {
-		copied = call(procCopyImage, handle, imageBitmap, 0, 0, lrCreateDIB)
-	}
+	copied := call(procCopyImage, handle, imageBitmap, 0, 0, lrCreateDIB)
 	if copied == 0 {
 		return 0, lastError("CopyImage")
 	}
 	return copied, nil
 }
 
-// cells is memory GlobalLock handed back, seen as the bytes it holds. The
+// locked is a block GlobalLock handed back, seen as the values it holds. The
 // address is Windows's, not the collector's, and what it points at is the
-// clipboard's own memory: it is valid from the lock above until
-// CloseClipboard, and it is never kept past the call that returned it.
+// clipboard's own memory: it is valid from the lock above until the clipboard
+// is closed, and it is never kept past the call that returned it.
 //
 // This is the one place in the package where a number from Win32 becomes a
 // pointer, and `go vet` reports conversions like it as a possible misuse of
 // unsafe.Pointer wherever they are written. That is a known limit of vet with
 // Win32 FFI and not something this code can be written around; the invariant
 // above is what makes it safe.
-func cells(address uintptr, size int) []byte {
-	return unsafe.Slice((*byte)(unsafe.Pointer(address)), size) //nolint:gosec,govet // the address belongs to the clipboard
+func locked[T any](address uintptr, count int) []T {
+	return unsafe.Slice((*T)(unsafe.Pointer(address)), count) //nolint:gosec,govet // the address belongs to the clipboard
 }
 
 // The clipboard formats this package copies by hand, and the flags its calls
@@ -305,8 +325,15 @@ const (
 	cfOwnerDisplay = 0x0080
 	cfDSPText      = 0x0081
 	cfDSPBitmap    = 0x0082
-	cfGDIObj       = 0x0083
-	cfPrivate      = 0x0200
+	// The private display formats an application writes for its own drawing.
+	cfDSPMetafilePict = 0x0083
+	cfDSPEnhMetafile  = 0x008E
+	cfPrivate         = 0x0200
+
+	// The range Windows keeps for graphics objects: these are GDI handles,
+	// never memory, whatever the format number they arrived under.
+	cfGDIObjectFirst = 0x0300
+	cfGDIObjectLast  = 0x03FF
 
 	imageBitmap = 0
 

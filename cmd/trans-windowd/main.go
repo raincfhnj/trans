@@ -50,7 +50,7 @@ func main() {
 	// its own — can only ask this one to read them again or to end. Posting is
 	// how it asks.
 	here := win32.CurrentThreadID()
-	startTray(here)
+	startTray(&settings, here)
 
 	wanted := []window{}
 	claimed := windows.claim(&settings, &wanted)
@@ -180,11 +180,13 @@ func (c chords) release(wanted []window) {
 	}
 }
 
-// startTray puts the icon up unless the settings say not to. A tray that
-// cannot be drawn is not a reason for the chords to stop working: what it has
-// to say goes to the log and the daemon carries on without it.
-func startTray(here uint32) {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TRANS_TRAY")), "0") {
+// startTray puts the icon up unless the settings say not to. The setting is read
+// where every other setting is read — `TRANS_TRAY=0`, in the environment or in
+// the file — so turning the icon off needs no second way of saying so. A tray
+// that cannot be drawn is not a reason for the chords to stop working: what it
+// has to say goes to the log and the daemon carries on without it.
+func startTray(settings *config.Settings, here uint32) {
+	if !settings.Tray {
 		note("no tray icon: TRANS_TRAY=0")
 		return
 	}

@@ -231,12 +231,12 @@ func TestAChordThatCannotBeGivenBackIsReported(t *testing.T) {
 }
 
 // TRANS_TRAY=0 is how the icon is left out, and the daemon says so rather than
-// starting one and hiding it.
+// starting one and hiding it. The setting is read where the rest are read, so it
+// arrives here as a field rather than as a second look at the environment.
 func TestTheTrayCanBeTurnedOff(t *testing.T) {
 	said, troubles := speakers(t)
-	t.Setenv("TRANS_TRAY", "0")
 
-	startTray(0)
+	startTray(&config.Settings{Tray: false}, 0)
 
 	if len(*troubles) != 0 {
 		t.Errorf("turning the tray off was treated as trouble: %v", *troubles)

@@ -13,6 +13,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"trans/internal/atomicfile"
 )
 
 // ErrUnsupported is what every function answers where DPAPI does not exist,
@@ -54,29 +56,20 @@ func path(directory string) string {
 	return filepath.Join(directory, "secrets.json")
 }
 
-// write replaces the store in one step. A half-written store would refuse to
-// load at the next start, and the file holds the only copy of the key.
+// write replaces the store in one step, through the same private write the
+// drafts and the settings file use: a half-written store would refuse to load
+// at the next start, and this file holds the only copy of the key. The name of
+// the file being written is the shared write's business too — a fixed one would
+// be a name two programs could take turns clobbering.
 func write(directory string, contents *File) error {
 	if directory == "" {
 		return errors.New("secrets: no configuration directory to store in")
-	}
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
 	}
 	encoded, err := marshal(contents)
 	if err != nil {
 		return err
 	}
-	target := path(directory)
-	temporary := target + ".tmp"
-	if err := os.WriteFile(temporary, encoded, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(temporary, target); err != nil {
-		_ = os.Remove(temporary)
-		return err
-	}
-	return nil
+	return atomicfile.Write(path(directory), encoded)
 }
 
 // read opens the store, answering nil (with no error) when there is no file

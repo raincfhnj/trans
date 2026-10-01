@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
+
+	"trans/internal/httpapi"
 )
 
 type Translator interface {
@@ -67,6 +70,23 @@ func ReporterOf(translator Translator) (UsageReporter, error) {
 // error carries a URL, a Go type and a method name, none of which help the person
 // looking at a popup.
 func Trouble(service string, err error) error {
+	// withWords puts what the service said after the sentence, when it said
+	// anything at all: the kind of failure is this program's word for it, but
+	// the service's own words are often the only thing that names the fix.
+	withWords := func(sentence, said string) error {
+		if said == "" {
+			return errors.New(sentence)
+		}
+		return errors.New(sentence + ": " + said)
+	}
+
+	var refused *httpapi.Auth
+	var limited *httpapi.RateLimited
+	var down *httpapi.Unavailable
+	var unreachable *httpapi.Network
+	var dns *net.DNSError
+	var connecting *net.OpError
+
 	switch {
 	case err == nil:
 		return nil
@@ -74,15 +94,34 @@ func Trouble(service string, err error) error {
 		return err
 	case errors.Is(err, context.DeadlineExceeded), os.IsTimeout(err):
 		return fmt.Errorf("%s did not answer in time", service)
+	case errors.As(err, &refused):
+		return withWords(service+" refused the API key", refused.Body)
+	case errors.As(err, &limited):
+		// How long the service asked to be left alone is worth passing on: it
+		// is the difference between asking again in a moment and leaving the
+		// panel alone for a while.
+		if limited.RetryAfter > 0 {
+			return withWords(
+				service+" is rate limiting us — try again in "+
+					limited.RetryAfter.Round(100*time.Millisecond).String(),
+				limited.Body)
+		}
+		return withWords(service+" is rate limiting us", limited.Body)
+	case errors.As(err, &down):
+		if down.RetryAfter > 0 {
+			return withWords(
+				service+" is not answering right now — try again in "+
+					down.RetryAfter.Round(100*time.Millisecond).String(),
+				down.Body)
+		}
+		return withWords(service+" is not answering right now", down.Body)
+	case errors.As(err, &dns):
+		return fmt.Errorf("%s could not be found — is there a network?", service)
+	case errors.As(err, &connecting):
+		return fmt.Errorf("%s could not be reached", service)
+	case errors.As(err, &unreachable):
+		return fmt.Errorf("%s could not be reached", service)
 	default:
-		var dns *net.DNSError
-		if errors.As(err, &dns) {
-			return fmt.Errorf("%s could not be found — is there a network?", service)
-		}
-		var connecting *net.OpError
-		if errors.As(err, &connecting) {
-			return fmt.Errorf("%s could not be reached", service)
-		}
 		return fmt.Errorf("%s could not be asked: %w", service, err)
 	}
 }

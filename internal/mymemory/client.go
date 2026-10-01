@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"trans/internal/httpapi"
 	"trans/internal/translation"
 )
 
@@ -33,7 +34,7 @@ const (
 )
 
 type Client struct {
-	httpClient     *http.Client
+	httpClient     *httpapi.Transport
 	endpoint       string
 	targetLanguage string
 	email          string
@@ -57,7 +58,15 @@ func WithEmail(email string) Option {
 
 func New(options ...Option) *Client {
 	client := &Client{
-		httpClient:     &http.Client{Timeout: defaultTimeout},
+		httpClient: httpapi.New(
+			httpapi.WithTimeout(defaultTimeout),
+			// The address that raises the allowance is not a credential and
+			// travels in the query string, so there is no redirect guard to
+			// install — but a free endpoint is throttled, and this is where the
+			// retry policy and the sentence it earns matter most.
+			httpapi.WithErrorBodyLimit(maxErrorBodyBytes),
+			httpapi.WithExplainer(explanation),
+		),
 		endpoint:       defaultEndpoint,
 		targetLanguage: "en",
 	}
@@ -110,7 +119,7 @@ func (c *Client) translateOne(ctx context.Context, draft string) (string, error)
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the service refused the draft: %s%s",
+		return "", fmt.Errorf("the service refused the draft: %s: %s",
 			response.Status, explanation(response.Body))
 	}
 
@@ -169,10 +178,17 @@ var regionMatters = map[string]bool{
 	"es-MX": true,
 }
 
+// explanation says what the service said about the refusal, without the
+// punctuation the sentence around it already carries — the transport hands the
+// refusal body to this, so the same words serve both a classified answer and
+// one this adapter answers for itself.
 func explanation(body io.Reader) string {
 	raw, err := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
 	if err != nil || len(raw) == 0 {
-		return ""
+		return "no details"
 	}
-	return " — " + strings.TrimSpace(string(raw))
+	if trimmed := strings.TrimSpace(string(raw)); trimmed != "" {
+		return trimmed
+	}
+	return "no details"
 }

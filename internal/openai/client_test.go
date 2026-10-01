@@ -132,6 +132,42 @@ func TestARefusalIsReportedWithWhatTheServiceSaid(t *testing.T) {
 	if !strings.Contains(err.Error(), "Incorrect API key provided") {
 		t.Errorf("error is %v, want it to say what the service said", err)
 	}
+	// A key that was refused will be refused again, so the sentence has to say
+	// what kind of trouble it is rather than repeat a status line.
+	if !strings.Contains(err.Error(), "the service refused the API key") {
+		t.Errorf("error is %v, want it to say the key was refused", err)
+	}
+}
+
+// A 429 is the service asking to be asked again — a rate limit on a key or on a
+// model, not a refusal of the draft — and the second ask is the one that
+// carries the translation.
+func TestARateLimitIsAskedAgainRatherThanReported(t *testing.T) {
+	t.Parallel()
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"error":{"message":"Rate limit reached for a-model"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, answered)
+	}))
+	t.Cleanup(server.Close)
+
+	english, err := openai.New("key-123", openai.WithEndpoint(server.URL), openai.WithModel("a-model")).
+		Translate(context.Background(), "Bitte behebe den fehlschlagenden Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if english != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translation from the second ask", english)
+	}
+	if asked != 2 {
+		t.Errorf("the service was asked %d times, want the one retry a 429 earns", asked)
+	}
 }
 
 // A local model is reached over plain http, which is why the loopback address is

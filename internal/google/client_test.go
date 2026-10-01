@@ -144,6 +144,11 @@ func TestAServiceErrorIsReportedWithWhatItSaid(t *testing.T) {
 	if !strings.Contains(err.Error(), "API key not valid") {
 		t.Errorf("Translate returned %v, want what the service said", err)
 	}
+	// A key that was refused will be refused again, so the sentence has to say
+	// what kind of trouble it is rather than repeat a status line.
+	if !strings.Contains(err.Error(), "google refused the API key") {
+		t.Errorf("Translate returned %v, want it to say the key was refused", err)
+	}
 }
 
 func TestAnEmptyAnswerIsAnErrorRatherThanAnEmptyPrompt(t *testing.T) {
@@ -194,5 +199,35 @@ func TestARedirectToPlainHttpIsRefusedSoTheKeyStays(t *testing.T) {
 	}
 	if plainReached {
 		t.Error("the key was sent to the redirect target")
+	}
+}
+
+// A 429 is the service asking to be asked again rather than a refusal of the
+// draft, and the second ask is the one that carries the translation.
+func TestARateLimitIsAskedAgainRatherThanReported(t *testing.T) {
+	t.Parallel()
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"error":{"message":"Quota exceeded"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, translated)
+	}))
+	t.Cleanup(server.Close)
+
+	english, err := google.New("key-123", google.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den fehlschlagenden Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if english != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translation from the second ask", english)
+	}
+	if asked != 2 {
+		t.Errorf("the service was asked %d times, want the one retry a 429 earns", asked)
 	}
 }

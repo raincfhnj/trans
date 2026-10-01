@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"trans/internal/httpapi"
 	"trans/internal/translation"
 )
 
@@ -33,7 +34,7 @@ const (
 )
 
 type Client struct {
-	httpClient     *http.Client
+	httpClient     *httpapi.Transport
 	endpoint       string
 	apiKey         string
 	targetLanguage string
@@ -62,7 +63,18 @@ func refuseInsecureRedirect(request *http.Request, _ []*http.Request) error {
 
 func New(apiKey string, options ...Option) *Client {
 	client := &Client{
-		httpClient:     &http.Client{Timeout: defaultTimeout},
+		httpClient: httpapi.New(
+			httpapi.WithTimeout(defaultTimeout),
+			// The guard is built in with the client rather than left to a
+			// caller, so no way of building one can leave the key free to
+			// follow a redirect into the clear.
+			httpapi.WithCheckRedirect(refuseInsecureRedirect),
+			httpapi.WithErrorBodyLimit(maxErrorBodyBytes),
+			// The service complains in JSON under error.message; the transport
+			// hands the refusal body to this so the sentence carries the words
+			// rather than the braces.
+			httpapi.WithExplainer(explanation),
+		),
 		endpoint:       defaultEndpoint,
 		apiKey:         apiKey,
 		targetLanguage: defaultTargetLanguage,
@@ -70,9 +82,6 @@ func New(apiKey string, options ...Option) *Client {
 	for _, option := range options {
 		option(client)
 	}
-	// After the options, so no way of building a client can leave the key free to
-	// follow a redirect into the clear.
-	client.httpClient.CheckRedirect = refuseInsecureRedirect
 	return client
 }
 
@@ -127,7 +136,7 @@ func (c *Client) Translate(ctx context.Context, draft string) (string, error) {
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the service refused the draft: %s%s",
+		return "", fmt.Errorf("the service refused the draft: %s: %s",
 			response.Status, explanation(response.Body))
 	}
 
@@ -175,10 +184,14 @@ var regionMatters = map[string]bool{
 	"es-MX": true,
 }
 
+// explanation says what the service said about the refusal, without the
+// punctuation the sentence around it already carries — the transport hands the
+// refusal body to this, so the same words serve both a classified answer and
+// one this adapter answers for itself.
 func explanation(body io.Reader) string {
 	raw, err := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
 	if err != nil || len(raw) == 0 {
-		return ""
+		return "no details"
 	}
 
 	var refusal struct {
@@ -187,7 +200,10 @@ func explanation(body io.Reader) string {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &refusal); err == nil && refusal.Error.Message != "" {
-		return " — " + refusal.Error.Message
+		return refusal.Error.Message
 	}
-	return " — " + strings.TrimSpace(string(raw))
+	if trimmed := strings.TrimSpace(string(raw)); trimmed != "" {
+		return trimmed
+	}
+	return "no details"
 }

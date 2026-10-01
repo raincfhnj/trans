@@ -12,7 +12,10 @@ The draft is split into sentences, and each sentence is translated on its own
 and remembered together with the sentence in front of it. While you write the
 fourth sentence, the first three are already known and cost nothing; editing an
 earlier sentence retranslates it and its immediate neighbourhood, not the whole
-draft.
+draft. The memory is the session's own — nothing of it is written down, and
+closing the panel forgets it. That is the trade it makes: a sentence paid for
+in one session is paid for again in the next, and none of your prompts are
+left on disk for the sake of a cheaper one.
 
 Every request carries the text before it as
 [context](https://developers.deepl.com/docs/api-reference/translate), which

@@ -500,6 +500,11 @@ func postThreadMessage(thread, kind uint32) error {
 
 // Keys translates a hotkey written the way a person writes one. The letters and
 // digits are their own virtual key on Windows, which is all the panel needs.
+//
+// F12 is refused rather than parsed. Windows keeps it for the debugger and for
+// nothing else, and a chord written with it does not merely fail to register:
+// the key press goes to whatever has the keyboard, which is not what a setting
+// asking to be told about it meant.
 func Keys(spec string) (modifiers, key uint32, err error) {
 	for _, part := range strings.Split(strings.ToLower(spec), "+") {
 		switch strings.TrimSpace(part) {
@@ -511,6 +516,8 @@ func Keys(spec string) (modifiers, key uint32, err error) {
 			modifiers |= modShift
 		case "win", "super":
 			modifiers |= modWin
+		case "f12":
+			return 0, 0, errors.New("f12 is reserved by Windows and cannot be used as a hotkey")
 		case "":
 			continue
 		default:

@@ -43,7 +43,7 @@ func TestTheLabelIsWrittenIntoTheBottomBorder(t *testing.T) {
 	styles := frame.NewStyles()
 
 	box := frame.Box(true, 40).Render("the writing")
-	labelled := frame.Labelled(&styles.Mark, &styles.Badge, box, "45%", true)
+	labelled := frame.Labelled(&styles.Mark, &styles.Badge, &styles.Badge, box, "45%", true)
 
 	border := strings.Split(labelled, "\n")
 	if !strings.Contains(border[len(border)-1], "45%") {
@@ -59,7 +59,7 @@ func TestALabelThatDoesNotFitIsLeftOut(t *testing.T) {
 	styles := frame.NewStyles()
 
 	box := frame.Box(true, 14).Render("text")
-	if labelled := frame.Labelled(&styles.Mark, &styles.Badge, box, "a-label-far-too-long", true); labelled != box {
+	if labelled := frame.Labelled(&styles.Mark, &styles.Badge, &styles.Badge, box, "a-label-far-too-long", true); labelled != box {
 		t.Errorf("the box is %q, want it untouched by a label without room", labelled)
 	}
 }

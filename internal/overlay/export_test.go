@@ -3,6 +3,7 @@ package overlay
 import (
 	"errors"
 
+	"trans/internal/frame"
 	"trans/internal/promptflow"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,8 +57,8 @@ func PreviewShown(draft, english string) tea.Msg {
 }
 
 const (
-	ScrollThumb = scrollThumb
-	ScrollTrack = scrollTrack
+	ScrollThumb = frame.ScrollThumb
+	ScrollTrack = frame.ScrollTrack
 )
 
 // PreviewFailed is what the model gets when a translation did not come back.

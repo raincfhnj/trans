@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"trans/internal/gtranslate"
 )
@@ -73,7 +74,8 @@ func TestTheDraftIsSentWithTheTargetLanguageAndAutoDetection(t *testing.T) {
 }
 
 // A translation that did not arrive must read like a sentence, not like a Go
-// value, and it must not be mistaken for a translation.
+// value, and it must not be mistaken for a translation. A 429 is the endpoint
+// saying it is being asked too often, which is a sentence of its own.
 func TestAServiceThatRefusesIsReportedInFull(t *testing.T) {
 	t.Parallel()
 	server, _ := serverReturning(t, http.StatusTooManyRequests, "quota exceeded")
@@ -85,6 +87,69 @@ func TestAServiceThatRefusesIsReportedInFull(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "quota exceeded") {
 		t.Errorf("error is %v, want it to say what the service said", err)
+	}
+	if !strings.Contains(err.Error(), "google is rate limiting us") {
+		t.Errorf("error is %v, want it to say the endpoint is throttling", err)
+	}
+}
+
+// A 429 is not the end of the draft: the endpoint asks to be asked again, and
+// the second ask is the one that carries the translation. This is the endpoint
+// most likely to be throttled, so it is the one that most needs the retry.
+func TestARateLimitIsAskedAgainRatherThanReported(t *testing.T) {
+	t.Parallel()
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, "quota exceeded")
+			return
+		}
+		_, _ = io.WriteString(w, translated)
+	}))
+	t.Cleanup(server.Close)
+
+	english, err := gtranslate.New(gtranslate.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den fehlschlagenden Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if english != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translation from the second ask", english)
+	}
+	if asked != 2 {
+		t.Errorf("the endpoint was asked %d times, want the one retry a 429 earns", asked)
+	}
+}
+
+// A throttle that does not lift carries the time it named, and the wait is left
+// to the person: a popup is not a place to sit out thirty seconds.
+func TestAPersistentRateLimitSaysWhenToComeBack(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, "quota exceeded")
+	}))
+	t.Cleanup(server.Close)
+
+	started := time.Now()
+	_, err := gtranslate.New(gtranslate.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe es")
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Fatal("Translate returned no error for an endpoint that keeps throttling")
+	}
+	for _, wanted := range []string{"google is rate limiting us", "30s", "quota exceeded"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Errorf("error %q does not say %q", err, wanted)
+		}
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Translate waited %s, want the wait the endpoint named left to the person", elapsed)
 	}
 }
 

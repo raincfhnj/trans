@@ -73,6 +73,11 @@ func TestTranslateReportsAnUnsuccessfulResponse(t *testing.T) {
 	if !strings.Contains(err.Error(), "Authorization failed") {
 		t.Errorf("error %q does not carry DeepL's explanation", err)
 	}
+	// A key that was refused will be refused again, so the sentence has to say
+	// what kind of trouble it is rather than repeat a status line.
+	if !strings.Contains(err.Error(), "deepl refused the API key") {
+		t.Errorf("error %q does not say the key was refused", err)
+	}
 }
 
 func TestTranslateReportsAResponseWithoutTranslations(t *testing.T) {
@@ -294,5 +299,90 @@ func TestAServiceThatCannotBeReachedSaysThatPlainly(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "deepl could not be") {
 		t.Errorf("Translate returned %v, want a sentence about reaching it", err)
+	}
+}
+
+// A 429 is not DeepL rejecting the draft: it is DeepL asking to be asked again,
+// and the second ask is the one that carries the translation.
+func TestARateLimitIsAskedAgainRatherThanReported(t *testing.T) {
+	t.Parallel()
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"message":"Too many requests"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"translations":[{"text":"Please fix the failing test"}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	translated, err := deepl.New("key-123", deepl.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if translated != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translation from the second ask", translated)
+	}
+	if asked != 2 {
+		t.Errorf("DeepL was asked %d times, want the one retry a 429 earns", asked)
+	}
+}
+
+// A throttling that does not lift is not DeepL rejecting the request: it is a
+// service saying to come back later, the time it names comes back with it, and
+// the wait is not sat through — a popup is not a place to wait out thirty
+// seconds.
+func TestAPersistentRateLimitIsReportedAsOne(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"message":"Too many requests"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	started := time.Now()
+	_, err := deepl.New("key-123", deepl.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den Test")
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Fatal("Translate returned no error for a service that keeps throttling")
+	}
+	for _, wanted := range []string{"deepl is rate limiting us", "30s", "Too many requests"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Errorf("error %q does not say %q", err, wanted)
+		}
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Translate waited %s, want the wait DeepL named left to the person", elapsed)
+	}
+}
+
+// DeepL losing its footing is a third kind of trouble again: not the key, not
+// the allowance, but a service that is briefly not there.
+func TestAServiceThatKeepsFailingSaysItIsNotAnswering(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, `{"message":"Service temporarily unavailable"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	_, err := deepl.New("key-123", deepl.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den Test")
+
+	if err == nil {
+		t.Fatal("Translate returned no error for a service that is unwell")
+	}
+	for _, wanted := range []string{"deepl is not answering right now", "Service temporarily unavailable"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Errorf("error %q does not say %q", err, wanted)
+		}
 	}
 }

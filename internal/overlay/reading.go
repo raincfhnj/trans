@@ -1,6 +1,10 @@
 package overlay
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"trans/internal/frame"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 // flipReading swaps the split for the whole popup and back. Reading starts at the
 // top of the translation; writing shows its end, where the writing is.
@@ -68,5 +72,5 @@ func (m Model) readingRows() int {
 }
 
 func (m Model) readingTotal() int {
-	return rowsOf(m.preview, m.contentWidth())
+	return frame.RowsOf(m.preview, m.contentWidth())
 }

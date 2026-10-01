@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"trans/internal/atomicfile"
 )
 
 // Store is a directory of drafts, one per pane.
@@ -49,9 +51,13 @@ func (s Slot) Load() (string, error) {
 	return string(kept), nil
 }
 
-// Save keeps the draft, or removes it when there is nothing left to keep. It
-// writes a fresh file and moves it into place, which keeps the draft private
-// even if something replaced the old file with a link or loosened its access.
+// Save keeps the draft, or removes it when there is nothing left to keep. The
+// write is the shared one: a fresh file beside the old, moved into place, so a
+// draft is never half of one thought and half of another — and a link planted
+// where the draft belongs is replaced rather than written through. What keeps
+// it to its author is the directory: owner-only where the filesystem keeps
+// access bits, and on Windows the state directory's own access control list,
+// which is where that protection actually lives.
 func (s Slot) Save(text string) error {
 	if s.path == "" {
 		return nil
@@ -60,25 +66,9 @@ func (s Slot) Save(text string) error {
 		return s.Clear()
 	}
 
-	// A draft is unfinished thinking about the author's own work.
-	fresh, err := os.CreateTemp(filepath.Dir(s.path), "writing-*")
-	if err != nil {
-		return fmt.Errorf("keeping the draft: %w", err)
-	}
-	defer os.Remove(fresh.Name())
-
-	if err := fresh.Chmod(0o600); err != nil {
-		_ = fresh.Close()
-		return fmt.Errorf("keeping the draft private: %w", err)
-	}
-	if _, err := fresh.WriteString(text); err != nil {
-		_ = fresh.Close()
-		return fmt.Errorf("keeping the draft: %w", err)
-	}
-	if err := fresh.Close(); err != nil {
-		return fmt.Errorf("keeping the draft: %w", err)
-	}
-	if err := os.Rename(fresh.Name(), s.path); err != nil {
+	// A draft is unfinished thinking about the author's own work, so it goes
+	// through the write the settings file and the record of prompts use too.
+	if err := atomicfile.Write(s.path, []byte(text)); err != nil {
 		return fmt.Errorf("keeping the draft: %w", err)
 	}
 	return nil

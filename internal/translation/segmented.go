@@ -13,10 +13,10 @@ const (
 	// and keeping the window small means editing early in a draft does not
 	// invalidate everything after it.
 	contextSentences = 1
-	// maxRemembered bounds the store when the sentences are held in the
-	// process alone: a long session would otherwise keep every sentence it
-	// ever translated. A memory written to disk brings its own limit, so the
-	// file and the store hold the same sentences.
+	// maxRemembered bounds the store: a long session would otherwise keep
+	// every sentence it ever translated. The store lives for the session
+	// alone — nothing of it is written down — so this is the whole of what a
+	// draft is compared against while it is being written.
 	maxRemembered = 256
 )
 
@@ -44,12 +44,6 @@ type segmented struct {
 	// tail is the sentence still being written. It is kept in one slot instead
 	// of the map, so a long session does not collect an entry per keystroke.
 	tailKey, tailText string
-	// limit is how many sentences the store keeps: maxRemembered without a
-	// memory file, the memory's own limit with one, so what is written out and
-	// what is held are the same set.
-	limit int
-	// memory, when given, is written every time a sentence joins the store.
-	memory *Memory
 }
 
 type call struct {
@@ -58,29 +52,14 @@ type call struct {
 	err  error
 }
 
-// Segmented translates through the cache, and with a memory given it starts
-// from what the file already holds and writes back what it learns.
-func Segmented(translator Translator, memories ...*Memory) Translator {
-	store := &segmented{
+// Segmented translates through the cache. The cache is the session's own: it
+// is what makes writing cheap, and it is gone when the panel closes.
+func Segmented(translator Translator) Translator {
+	return &segmented{
 		translator: translator,
 		known:      map[string]string{},
 		inflight:   map[string]*call{},
-		limit:      maxRemembered,
 	}
-	for _, memory := range memories {
-		if memory == nil {
-			continue
-		}
-		store.memory, store.limit = memory, memory.limit
-		for _, remembered := range memory.loaded {
-			if _, known := store.known[remembered.Key]; known {
-				continue
-			}
-			store.known[remembered.Key] = remembered.Translated
-			store.remembered = append(store.remembered, remembered.Key)
-		}
-	}
-	return store
 }
 
 func (s *segmented) Translate(ctx context.Context, draft string) (string, error) {
@@ -217,23 +196,12 @@ func (s *segmented) keep(key, translated string, asTail bool) {
 
 	if _, known := s.known[key]; !known {
 		s.remembered = append(s.remembered, key)
-		if len(s.remembered) > s.limit {
+		if len(s.remembered) > maxRemembered {
 			delete(s.known, s.remembered[0])
 			s.remembered = s.remembered[1:]
 		}
 	}
 	s.known[key] = translated
-	s.persist()
-}
-
-// persist hands the store to the memory to be written out, expected under the
-// lock: a sentence that has just been learned is on disk before the next one
-// is asked for, so nothing waits for the panel to be closed.
-func (s *segmented) persist() {
-	if s.memory == nil {
-		return
-	}
-	s.memory.remember(s.remembered, s.known)
 }
 
 // contextBefore is the handful of sentences in front of one, which is what the

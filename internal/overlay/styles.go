@@ -9,7 +9,7 @@ var (
 	accent = lipgloss.Color("5")
 	danger = lipgloss.Color("1")
 	// The frame is a line, not something to read, so grey suits it.
-	frame  = lipgloss.Color("8")
+	grey   = lipgloss.Color("8")
 	bright = lipgloss.Color("13")
 )
 
@@ -31,9 +31,7 @@ type styles struct {
 	off lipgloss.Style
 	// mark is the braille signature: the colour of the frame, since it is drawn
 	// furniture rather than something to read. Faint is too dim for braille dots.
-	mark      lipgloss.Style
-	activeBox lipgloss.Style
-	idleBox   lipgloss.Style
+	mark lipgloss.Style
 }
 
 // cursorFor is the cell the caret is drawn in. A terminal that is told where the
@@ -62,17 +60,6 @@ func newStyles() styles { // Anything meant to be read keeps the terminal's own 
 		bright:      lipgloss.NewStyle().Foreground(bright).Bold(true),
 		mode:        lipgloss.NewStyle().Foreground(accent).Bold(true),
 		off:         lipgloss.NewStyle().Strikethrough(true),
-		mark:        lipgloss.NewStyle().Foreground(frame),
-
-		// The accented border marks the panel being written in or read; the other
-		// one recedes into the frame's grey.
-		activeBox: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(accent).
-			Padding(0, 1),
-		idleBox: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(frame).
-			Padding(0, 1),
+		mark:        lipgloss.NewStyle().Foreground(grey),
 	}
 }

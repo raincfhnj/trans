@@ -14,6 +14,7 @@ import (
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -641,105 +642,146 @@ func (m Model) showsEnglish() bool {
 	return m.pane.Height-headerRows-footerRows-draftFrame-englishRows >= minDraftRows
 }
 
-func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleKey is the dispatcher: where the panel is decides which handler a key
+// belongs to, and only what is left over is a question about the key itself.
+//
+// The order below is the stacking order of the popup, and it is load-bearing:
+// the record and the full-screen reading are drawn in front of the draft, so
+// they are asked for a key first. A letter must never be typed into a box the
+// author cannot see.
+func (m Model) handleKey(pressed tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case key.Type == tea.KeyCtrlC:
+	// ctrl+c is not the panel's to give away: it closes whether a draft is
+	// half-written, a translation is on its way, or a message is up.
+	case key.Matches(pressed, keys.Quit):
 		return m, tea.Quit
 
 	// The record of delivered prompts answers to its own keys while it is open,
-	// and ctrl+g opens it from wherever the panel is.
-	case m.historyOpen || key.Type == tea.KeyCtrlG:
-		return m.historyKey(key)
+	// and ctrl+g opens it from wherever the panel is — which is why that key is
+	// asked for here rather than inside the record's own handler.
+	case m.historyOpen || key.Matches(pressed, keys.History):
+		return m.historyKey(pressed)
 
-	// Tab flips between writing and reading the translation.
-	case key.Type == tea.KeyTab:
+	// Tab turns the translation around from either side of it, so it is asked
+	// for before the reading pane gets the chance to claim it.
+	case key.Matches(pressed, keys.Flip):
 		return m.flipReading(), nil
 
 	case m.reading:
-		return m.readKey(key)
+		return m.readKey(pressed)
+	}
 
-	// Escape closes a read-mode panel whatever is on screen: the text came from
-	// somewhere else, nothing here is kept for next time, and the notice says
-	// so. Leaving an edit mode is the one exception — a vim author's fingers
-	// expect escape out of insert before anything else.
-	case m.options.Read && key.Type == tea.KeyEsc &&
-		(!m.draft.Modal() || m.draft.Mode() == vimarea.Normal):
+	// Escape is asked for next because what it means depends on where the panel
+	// is; a vim edit mode that claims it passes it on to the draft from there.
+	if key.Matches(pressed, keys.Escape) {
+		return m.handleEscape(pressed)
+	}
+
+	// These are the panel's own keys, and they mean the same thing in every
+	// stage, so no one mode handler owns them.
+	switch {
+	case key.Matches(pressed, keys.Delivery):
+		return m.switchDelivery(), nil
+
+	// With nothing to translate with, the two keys that ask for a translation
+	// say so instead of doing nothing at all. The guard is asked first because
+	// the cases below it would otherwise take both keys.
+	case !m.translating() && key.Matches(pressed, keys.Live, keys.Translate):
+		return m.raiseNotice(errNoService)
+
+	case key.Matches(pressed, keys.Live):
+		return m.switchLive()
+
+	case key.Matches(pressed, keys.Translate):
+		return m.translateNow()
+
+	case key.Matches(pressed, keys.Clear):
+		return m.clearDraft()
+	}
+
+	// What is left is the send key, which the stage has a say in, or a key the
+	// draft box takes.
+	if m.stage == confirming {
+		return m.handleConfirmKey(pressed)
+	}
+	return m.handleComposingKey(pressed)
+}
+
+// handleEscape is what escape means where the panel is. Closing keeps the draft,
+// so it is always the way out; what comes before that are the exceptions, in the
+// order they matter, and only a vim edit mode ever gets the key instead.
+func (m Model) handleEscape(pressed tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	// A read-mode panel goes at once, whatever is on screen: the text came from
+	// somewhere else and nothing here is kept for next time, so escape is the
+	// way out even while a message is up. Leaving an edit mode is the one
+	// exception — a vim author's fingers expect escape out of insert before
+	// anything else.
+	case m.options.Read && (!m.draft.Modal() || m.draft.Mode() == vimarea.Normal):
 		return m.close()
 
-	// Escape takes the message away. It must not also close the popup.
-	case key.Type == tea.KeyEsc && (m.notice != nil || m.hint != ""):
+	// Otherwise escape takes the message away first. It must not also close the
+	// popup.
+	case m.notice != nil || m.hint != "":
 		m.notice, m.hint = nil, ""
 		return m, nil
 
-	case key.Type == tea.KeyEsc && m.stage == confirming:
+	// A finished translation waiting to be let go is turned down rather than
+	// closed: the draft it was made from is still there to carry on with.
+	case m.stage == confirming:
 		m.stage = composing
 		m.confirmWait = 0
 		m.refit()
 		return m, nil
 
-	case key.Type == tea.KeyEsc && !m.draft.Modal():
+	case !m.draft.Modal():
 		return m.close()
 
 	// Escape is the whole way out: insert mode first, then the popup. Nothing is
 	// lost by it, since closing keeps the draft.
-	case key.Type == tea.KeyEsc && m.draft.Mode() == vimarea.Normal:
+	case m.draft.Mode() == vimarea.Normal:
 		return m.close()
-
-	case key.Type == tea.KeyCtrlR:
-		return m.switchDelivery(), nil
-
-	case (key.Type == tea.KeyCtrlL || key.Type == tea.KeyCtrlT) &&
-		!m.translating():
-		return m.raiseNotice(errNoService)
-
-	case key.Type == tea.KeyCtrlL:
-		return m.switchLive()
-
-	// Translate what is there now: after a translation that did not arrive, and as
-	// the way to read the English at all when live translation is off.
-	case key.Type == tea.KeyCtrlT:
-		m.previewError = nil
-		m.refit()
-		m.revision++
-		started, cmd := m.startPreview()
-		translating := started.(Model)
-		// A confirmation that asked for this translation waits for this one now.
-		if translating.confirmWait != 0 {
-			translating.confirmWait = translating.requested
-		}
-		return translating, tea.Batch(cmd, translating.beginPulse())
-
-	// ctrl+u clears the whole draft, as it clears a line in a shell. The text
-	// area would otherwise use it to delete back to the line start.
-	case key.Type == tea.KeyCtrlU:
-		m.stage = composing
-		m.confirmWait = 0
-		m.draft.Clear()
-		m.draftTop = 0
-		m.forgetDraft()
-		m.resumed = false
-		m.preview, m.previewOf, m.previewError = "", "", nil
-		return m, nil
-
-	// Sending is deliberate: a bare enter is a new line, alt+enter sends. The
-	// terminal hands each press over on its own, so two presses of escape and
-	// enter stay two messages and cannot become a send.
-	case key.Type == tea.KeyCtrlD, key.Type == tea.KeyEnter && key.Alt:
-		switch m.stage {
-		case translating:
-			return m, nil
-		case confirming:
-			return m.deliverPreview()
-		default:
-			return m.startSubmit()
-		}
 	}
 
+	// An edit mode claimed it, so leaving insert or visual is the draft box's
+	// business: the key goes on to the box like any other.
+	return m.handleTypingKey(pressed)
+}
+
+// handleComposingKey is the keys while the draft box is what is in front, with
+// nothing waiting to be agreed to: the send key starts a send.
+func (m Model) handleComposingKey(pressed tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(pressed, keys.Send) {
+		// A send already on its way answers for the send key inside startSubmit
+		// — a second one would put the same prompt in front of the agent twice
+		// — so the translating stage needs nothing said about it here.
+		return m.startSubmit()
+	}
+	return m.handleTypingKey(pressed)
+}
+
+// handleConfirmKey is the keys while a finished translation waits for the
+// go-ahead: the send key is that go-ahead, and anything else is writing, which
+// takes the question back (see handleTypingKey).
+func (m Model) handleConfirmKey(pressed tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(pressed, keys.Send) {
+		return m.deliverPreview()
+	}
+	return m.handleTypingKey(pressed)
+}
+
+// handleTypingKey is the key no panel has claimed: the draft box takes it, and
+// what the box then says decides what follows — a confirmation is taken back, a
+// resumed draft becomes this session's, a pasted wall turns live translation
+// off, and a shorter edit asks for a translation again.
+func (m Model) handleTypingKey(pressed tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Writing anything is a fresh start for the panel's messages: a way out
+	// that did not work, or a notice, is about the attempt before this one.
 	m.failure, m.notice, m.hint = nil, nil, ""
 	before := m.draft.Value()
 
 	var cmd tea.Cmd
-	m.draft, cmd = m.draft.Update(key)
+	m.draft, cmd = m.draft.Update(pressed)
 	m.followCursor()
 
 	if m.draft.Value() != before && m.stage == confirming {
@@ -769,6 +811,37 @@ func (m Model) handleKey(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmd, m.schedulePreview())
 	}
 	return m, cmd
+}
+
+// translateNow is ctrl+t: translate what is there now, which is how a
+// translation that did not arrive is asked for again, and how the English is
+// read at all when live translation is off. A confirmation that asked for a
+// translation waits for this one now instead of the one it started.
+func (m Model) translateNow() (tea.Model, tea.Cmd) {
+	m.previewError = nil
+	m.refit()
+	m.revision++
+	started, cmd := m.startPreview()
+	translating := started.(Model)
+	if translating.confirmWait != 0 {
+		translating.confirmWait = translating.requested
+	}
+	return translating, tea.Batch(cmd, translating.beginPulse())
+}
+
+// clearDraft is ctrl+u: the whole draft goes, as ctrl+u clears a line in a
+// shell. The text area would otherwise use it to delete back to the line start.
+// What the panel had translated for that draft goes with it, so nothing that
+// belonged to a draft which is gone can still be delivered.
+func (m Model) clearDraft() (tea.Model, tea.Cmd) {
+	m.stage = composing
+	m.confirmWait = 0
+	m.draft.Clear()
+	m.draftTop = 0
+	m.forgetDraft()
+	m.resumed = false
+	m.preview, m.previewOf, m.previewError = "", "", nil
+	return m, nil
 }
 
 // grown is how much longer the draft got, counted in characters rather than bytes.

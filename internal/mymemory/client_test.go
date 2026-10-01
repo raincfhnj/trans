@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"trans/internal/mymemory"
 )
@@ -111,5 +112,66 @@ func TestALongDraftIsSentInPiecesAndJoined(t *testing.T) {
 	}
 	if len(english) != 3*len("Please fix the failing test") {
 		t.Errorf("Translate returned %q, want three answers joined", english)
+	}
+}
+
+// A 429 is MyMemory asking to be asked again rather than a refusal of the
+// draft, and the second ask is the one that carries the translation. A free
+// endpoint is the one most likely to be throttled, so it is the one that most
+// needs the retry.
+func TestARateLimitIsAskedAgainRatherThanReported(t *testing.T) {
+	t.Parallel()
+	asked := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		w.Header().Set("Content-Type", "application/json")
+		if asked == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"responseStatus":429,"responseDetails":"MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY"}`)
+			return
+		}
+		_, _ = io.WriteString(w, translated)
+	}))
+	t.Cleanup(server.Close)
+
+	english, err := mymemory.New(mymemory.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe den fehlschlagenden Test")
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+	if english != "Please fix the failing test" {
+		t.Errorf("Translate returned %q, want the translation from the second ask", english)
+	}
+	if asked != 2 {
+		t.Errorf("the service was asked %d times, want the one retry a 429 earns", asked)
+	}
+}
+
+// A throttle that does not lift carries the time it named, and the wait is left
+// to the person: a popup is not a place to sit out thirty seconds.
+func TestAPersistentRateLimitSaysWhenToComeBack(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, "MYMEMORY WARNING: YOU USED ALL AVAILABLE FREE TRANSLATIONS FOR TODAY")
+	}))
+	t.Cleanup(server.Close)
+
+	started := time.Now()
+	_, err := mymemory.New(mymemory.WithEndpoint(server.URL)).
+		Translate(context.Background(), "Bitte behebe es")
+	elapsed := time.Since(started)
+
+	if err == nil {
+		t.Fatal("Translate returned no error for a service that keeps throttling")
+	}
+	for _, wanted := range []string{"mymemory is rate limiting us", "30s", "MYMEMORY WARNING"} {
+		if !strings.Contains(err.Error(), wanted) {
+			t.Errorf("error %q does not say %q", err, wanted)
+		}
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("Translate waited %s, want the wait the service named left to the person", elapsed)
 	}
 }

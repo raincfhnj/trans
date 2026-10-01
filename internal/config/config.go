@@ -53,11 +53,6 @@ const (
 
 	defaultHistoryLimit = 500
 
-	tmVar      = "TRANS_TM"
-	tmLimitVar = "TRANS_TM_LIMIT"
-
-	defaultTMLimit = 5000
-
 	defaultLanguage = "EN-US"
 	dotenvName      = ".env"
 
@@ -131,12 +126,6 @@ type Settings struct {
 	// HistoryLimit is how many delivered prompts are kept before the oldest
 	// ones are dropped.
 	HistoryLimit int
-
-	// TM is whether the translations are written out between sessions, so a
-	// sentence paid for once is not paid for again after a restart.
-	TM bool
-	// TMLimit is how many sentences are kept before the oldest are dropped.
-	TMLimit int
 }
 
 // The environment wins over the .env file, so a one-off invocation can
@@ -189,9 +178,6 @@ func Load(getenv func(string) string) (Settings, error) {
 
 		History:      given.flag(historyVar, true),
 		HistoryLimit: given.count(historyLimitVar, defaultHistoryLimit),
-
-		TM:      given.flag(tmVar, true),
-		TMLimit: given.count(tmLimitVar, defaultTMLimit),
 
 		Options: translation.Options{
 			APIKey:         orDefault(lookup(ScopedKeyVar(provider)), lookup(ApiKeyVar)),

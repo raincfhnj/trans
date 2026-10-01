@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"trans/internal/httpapi"
 	"trans/internal/translation"
 )
 
@@ -32,7 +33,7 @@ const (
 )
 
 type Client struct {
-	httpClient     *http.Client
+	httpClient     *httpapi.Transport
 	endpoint       string
 	targetLanguage string
 }
@@ -49,7 +50,17 @@ func WithTargetLanguage(language string) Option {
 
 func New(options ...Option) *Client {
 	client := &Client{
-		httpClient:     &http.Client{Timeout: defaultTimeout},
+		httpClient: httpapi.New(
+			httpapi.WithTimeout(defaultTimeout),
+			// The endpoint carries no key, so there is no redirect guard to
+			// install — but this one is throttled more than any other, so the
+			// retry policy and the sentence it earns matter most here.
+			httpapi.WithErrorBodyLimit(maxErrorBodyBytes),
+			// A refusal here is a web page as often as it is a sentence; the
+			// transport hands the body to this so a page does not arrive in a
+			// popup.
+			httpapi.WithExplainer(explanation),
+		),
 		endpoint:       defaultEndpoint,
 		targetLanguage: defaultTargetLanguage,
 	}
@@ -94,7 +105,7 @@ func (c *Client) translateOne(ctx context.Context, draft string) (string, error)
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the service refused the draft: %s%s",
+		return "", fmt.Errorf("the service refused the draft: %s: %s",
 			response.Status, explanation(response.Body))
 	}
 
@@ -163,18 +174,26 @@ func languageCode(language string) string {
 	return strings.ToLower(code)
 }
 
+// explanation says what the service said about the refusal, without the
+// punctuation the sentence around it already carries — the transport hands the
+// refusal body to this, so the same words serve both a classified answer and
+// one this adapter answers for itself.
 func explanation(body io.Reader) string {
 	raw, err := io.ReadAll(io.LimitReader(body, maxErrorBodyBytes))
 	if err != nil || len(raw) == 0 {
-		return ""
+		return "no details"
 	}
 
 	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return "no details"
+	}
+
 	lowered := strings.ToLower(trimmed)
 	// The endpoint answers a refusal with a web page, and a page says nothing a
 	// sentence of ours could not; what it means is that the quota is watched.
 	if strings.HasPrefix(lowered, "<!doctype") || strings.HasPrefix(lowered, "<html") {
-		return " — the endpoint did not take the draft (rate limited, most likely)"
+		return "the endpoint did not take the draft (rate limited, most likely)"
 	}
-	return " — " + trimmed
+	return trimmed
 }

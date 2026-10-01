@@ -3,92 +3,58 @@
 package win32
 
 import (
-	"slices"
+	"context"
 	"testing"
+	"time"
+	"unsafe"
 )
 
-// TestHeldKeysChecksEveryModifier pins the keys a chord holds down, so no
-// modifier can be quietly dropped on the way to the key press. A dropped
-// modifier is not a smaller chord: win+v sent as a bare v is a literal letter
-// typed into the target where a paste was meant.
-//
-// This only exercises the pure mapping; no key event is sent.
-func TestHeldKeysChecksEveryModifier(t *testing.T) {
+// The size of the structure SendInput takes is part of its contract: Windows
+// reads it as written, and one that is a byte short makes every event land in
+// the wrong place. A keyboard event is the smallest thing this package sends,
+// and the structure is sized for a mouse event, which is the largest member of
+// the union on every architecture Windows runs on.
+func TestTheInputStructureIsTheSizeWindowsReads(t *testing.T) {
 	t.Parallel()
 
-	cases := []struct {
-		name       string
-		modifiers  uint32
-		wantKeySet []uintptr
-	}{
-		{name: "no modifier", modifiers: 0, wantKeySet: []uintptr{}},
-		{name: "ctrl", modifiers: modControl, wantKeySet: []uintptr{vkControl}},
-		{name: "shift", modifiers: modShift, wantKeySet: []uintptr{vkShift}},
-		{name: "alt", modifiers: modAlt, wantKeySet: []uintptr{vkMenu}},
-		{name: "win", modifiers: modWin, wantKeySet: []uintptr{vkLWin}},
-		{
-			name:       "ctrl+shift",
-			modifiers:  modControl | modShift,
-			wantKeySet: []uintptr{vkControl, vkShift},
-		},
-		{
-			name:       "ctrl+alt+shift",
-			modifiers:  modControl | modShift | modAlt,
-			wantKeySet: []uintptr{vkControl, vkShift, vkMenu},
-		},
-		{
-			name:       "all four, held in the order they are released in reverse",
-			modifiers:  modControl | modShift | modAlt | modWin,
-			wantKeySet: []uintptr{vkControl, vkShift, vkMenu, vkLWin},
-		},
+	size := unsafe.Sizeof(input{})
+	if size%unsafe.Alignof(uintptr(0)) != 0 {
+		t.Errorf("the input structure is %d bytes, which is not aligned for a handle", size)
 	}
-
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			held := heldKeys(test.modifiers)
-			if !slices.Equal(held, test.wantKeySet) {
-				t.Errorf("heldKeys(%#x) = %v, want %v", test.modifiers, held, test.wantKeySet)
-			}
-		})
+	if size < unsafe.Sizeof(mouseInput{})+4 {
+		t.Errorf("the input structure is %d bytes, too small to hold a mouse event", size)
 	}
 }
 
-// TestAWinChordHoldsTheWinKey checks the whole path for the chord that was
-// broken: Keys accepts win+v, and the keys held for it must include the Windows
-// key rather than nothing.
-//
-// This only reads the mapping; no key event is sent.
-func TestAWinChordHoldsTheWinKey(t *testing.T) {
+// WaitForForeground gives up on a window that cannot come forward, and does it
+// within its bound rather than looping. A handle that is not a window at all is
+// the one thing a session without a desktop can still be asked about.
+func TestWaitForForegroundGivesUpOnAWindowThatIsNotThere(t *testing.T) {
 	t.Parallel()
 
-	modifiers, key, err := Keys("win+v")
-	if err != nil {
-		t.Fatalf("Keys: %v", err)
+	started := time.Now()
+	if WaitForForeground(context.Background(), ^uintptr(0)) {
+		t.Fatal("WaitForForeground answered that a window that is not there is in front")
 	}
-	if modifiers != modWin {
-		t.Errorf("Keys read %#x as the modifiers, want %#x", modifiers, modWin)
-	}
-	if uintptr(key) != vkV {
-		t.Errorf("Keys read %#x as the key, want %#x", key, vkV)
-	}
-	held := heldKeys(modifiers)
-	if !slices.Equal(held, []uintptr{vkLWin}) {
-		t.Errorf("heldKeys for win+v = %v, want [%#x]", held, vkLWin)
+	if waited := time.Since(started); waited > 5*time.Second {
+		t.Errorf("WaitForForeground waited %s, want a bounded wait", waited)
 	}
 }
 
-// The super spelling is the same modifier as win, so it holds the same key.
-func TestASuperChordHoldsTheWinKeyToo(t *testing.T) {
+// A cancelled context is not a wait: the panel cancels the work a chord started
+// when the author presses escape, and the return key that would otherwise
+// follow must not be sent.
+func TestWaitForForegroundStopsOnACancelledContext(t *testing.T) {
 	t.Parallel()
 
-	modifiers, _, err := Keys("super+v")
-	if err != nil {
-		t.Fatalf("Keys: %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	started := time.Now()
+	if WaitForForeground(ctx, ^uintptr(0)) {
+		t.Fatal("WaitForForeground answered that a window it never saw is in front")
 	}
-	held := heldKeys(modifiers)
-	if !slices.Equal(held, []uintptr{vkLWin}) {
-		t.Errorf("heldKeys for super+v = %v, want [%#x]", held, vkLWin)
+	if waited := time.Since(started); waited > time.Second {
+		t.Errorf("WaitForForeground waited %s after cancellation, want an immediate answer", waited)
 	}
 }

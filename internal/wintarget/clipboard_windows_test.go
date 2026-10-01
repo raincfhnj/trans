@@ -38,22 +38,78 @@ func skipWithoutAClipboard(t *testing.T) {
 }
 
 // TestClipboardRoundTrip checks the half of the delivery that is ours: what is
-// put on the clipboard is what a paste would take from it.
+// put on the clipboard is what a paste would take from it, and what was there
+// before can be found again afterwards.
 func TestClipboardRoundTrip(t *testing.T) {
 	skipWithoutAClipboard(t)
 
-	before := win32.ClipboardText()
+	// What was on the clipboard is put to one side rather than read as text, so
+	// that a picture or a set of files is not thrown away by a test either.
+	before, err := win32.SnapshotClipboard()
+	if err != nil {
+		t.Skipf("the clipboard holds %v, which this session's test cannot put back", err)
+	}
+	t.Cleanup(func() {
+		if err := win32.RestoreClipboard(before); err != nil {
+			t.Errorf("putting the clipboard back: %v", err)
+		}
+		win32.ReleaseClipboard(before)
+	})
 
 	wanted := "trans clipboard probe — with a dash and a 中文 line"
 	if err := win32.SetClipboardText(wanted); err != nil {
 		t.Fatalf("SetClipboardText: %v", err)
 	}
+	// The clipboard belongs to the whole desktop, and `go test ./...` runs
+	// packages in parallel: another package's test may have taken it between
+	// these two lines. That is someone else's timing rather than a failure of
+	// this code, so it is said and not failed.
 	if got := win32.ClipboardText(); got != wanted {
-		t.Fatalf("the clipboard holds %q, want %q", got, wanted)
+		t.Skipf("the clipboard holds %q rather than %q: another process is using it",
+			got, wanted)
+	}
+}
+
+// TestASnapshotAndRestoreLeaveTheClipboardAsItWas is the promise a prompt makes
+// when it borrows the clipboard: what was there before a delivery is there
+// after it.
+func TestASnapshotAndRestoreLeaveTheClipboardAsItWas(t *testing.T) {
+	skipWithoutAClipboard(t)
+
+	before, err := win32.SnapshotClipboard()
+	if err != nil {
+		t.Skipf("the clipboard holds %v, which this session's test cannot put back", err)
+	}
+	t.Cleanup(func() { win32.ReleaseClipboard(before) })
+
+	// The clipboard is emptied over the snapshot the way a delivery empties it,
+	// so that the text read afterwards is the prompt's and not the snapshot's.
+	beforeText := win32.ClipboardText()
+	if err := win32.SetClipboardText("a prompt that borrowed the clipboard"); err != nil {
+		t.Fatalf("SetClipboardText: %v", err)
+	}
+	if err := win32.RestoreClipboard(before); err != nil {
+		t.Fatalf("RestoreClipboard: %v", err)
+	}
+	if got := win32.ClipboardText(); got != beforeText {
+		t.Errorf("the clipboard holds %q after a restore, want %q", got, beforeText)
+	}
+}
+
+// A snapshot taken and never put back is released without touching the
+// clipboard: this is the path a delivery takes when it borrows nothing.
+func TestASnapshotThatIsNeverUsedLeavesTheClipboardAlone(t *testing.T) {
+	skipWithoutAClipboard(t)
+
+	before, err := win32.SnapshotClipboard()
+	if err != nil {
+		t.Skipf("the clipboard holds %v, which this session's test cannot put back", err)
 	}
 
-	if before != "" {
-		_ = win32.SetClipboardText(before)
+	held := win32.ClipboardText()
+	win32.ReleaseClipboard(before)
+	if got := win32.ClipboardText(); got != held {
+		t.Errorf("the clipboard holds %q, want %q: releasing a snapshot must not touch it", got, held)
 	}
 }
 

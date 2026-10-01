@@ -1,6 +1,6 @@
 GOBIN  := $(shell go env GOPATH)/bin
 
-.PHONY: all build windows test race cover fmt fmt-check lint vuln qa clean tools
+.PHONY: all build windows test race cover fmt fmt-check lint vet vuln qa clean tools
 
 all: qa build
 
@@ -33,10 +33,21 @@ fmt-check:
 lint:
 	$(GOBIN)/golangci-lint run
 
+# `go vet` is what a reader runs by hand, so it is a gate of its own here: a
+# standard check that fails while `make qa` says everything is fine is a gate
+# nobody can trust. Its one exception is internal/win32, where a Windows call
+# hands an address back as a uintptr and the conversion that makes it usable is
+# exactly what vet's unsafeptr check cannot be told is safe. That check is
+# turned off for that package alone — the two sites carry the invariant in a
+# comment and a site-scoped nolint — rather than for the whole tree.
+vet:
+	go vet $$(go list ./... | grep -v 'trans/internal/win32$$')
+	go vet -unsafeptr=false ./internal/win32/
+
 vuln:
 	$(GOBIN)/govulncheck ./...
 
-qa: fmt-check lint race vuln
+qa: fmt-check vet lint race vuln
 
 tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest

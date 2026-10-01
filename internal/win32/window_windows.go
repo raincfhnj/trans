@@ -36,7 +36,6 @@ var (
 	procCloseClipboard         = user32.NewProc("CloseClipboard")
 	procSetClipboardData       = user32.NewProc("SetClipboardData")
 	procGetClipboardData       = user32.NewProc("GetClipboardData")
-	procKeybdEvent             = user32.NewProc("keybd_event")
 	procRegisterHotKey         = user32.NewProc("RegisterHotKey")
 	procUnregisterHotKey       = user32.NewProc("UnregisterHotKey")
 	procGetMessageW            = user32.NewProc("GetMessageW")
@@ -124,9 +123,6 @@ const (
 	vkLWin    = 0x5B
 	vkV       = 0x56
 	vkReturn  = 0x0D
-	vkEscape  = 0x1B
-
-	keyEventKeyUp = 0x0002
 
 	gwlStyle   = ^uintptr(15) // -16, the index GetWindowLongPtr wants for the style
 	gwlExStyle = ^uintptr(19) // -20, the same for the extended style
@@ -228,6 +224,15 @@ func Resolve(target Target) (Window, error) {
 		return Window{}, fmt.Errorf("no window matches %q", target.Pattern)
 	}
 	return window, nil
+}
+
+// StillForeground says whether the window is the one holding the keyboard right
+// now. Focus is not held for anyone: a click, a notification, or a dialog the
+// target opens takes it, and keys sent after that go to whatever took it. The
+// moment a key is about to be sent is therefore asked again, not assumed from
+// the activation that happened earlier.
+func StillForeground(handle uintptr) bool {
+	return handle != 0 && foreground().Handle == handle
 }
 
 // Activate brings a window to the front and gives it the keyboard. Windows only

@@ -209,8 +209,9 @@ func TestWithoutAServiceTheSelectionIsStillShown(t *testing.T) {
 
 	model := newSelection(t, translatorThatMustNotRun,
 		selection.Options{Source: selected, WithoutService: true})
+	// The frame is the signal that the panel has decided: by the time it says
+	// there is no service, the translator has either been asked or it has not.
 	waitFor(t, model, selected, "no translation service")
-	time.Sleep(200 * time.Millisecond)
 
 	if calls := translatorThatMustNotRun.count(); calls != 0 {
 		t.Errorf("the translator was called %d times, want none without a service", calls)
@@ -229,7 +230,6 @@ func TestASelectionThatNeverCameSaysWhyAndIsNotTranslated(t *testing.T) {
 		model := newSelection(t, translatorThatMustNotRun,
 			selection.Options{Source: "", SelectCopy: "ctrl+shift+c"})
 		waitFor(t, model, "nothing was selected", "put nothing back", "nothing to translate")
-		time.Sleep(200 * time.Millisecond)
 
 		if calls := translatorThatMustNotRun.count(); calls != 0 {
 			t.Errorf("the translator was called %d times, want none without a selection", calls)

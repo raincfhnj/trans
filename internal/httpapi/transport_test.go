@@ -424,8 +424,10 @@ func TestAServiceThatCannotBeReachedIsANetworkFailure(t *testing.T) {
 
 // A connection that breaks while it is being read from is worth another ask: a
 // service may have restarted between one preview and the next. The listener
-// here takes the connection and drops it without answering, which is what that
-// looks like from the client end.
+// here takes the connection, reads part of the request, and then drops it with
+// a reset — the failure under test is a conversation cut off mid-flight, not a
+// dial that never got anywhere, and reading first is what makes that the only
+// thing this can look like from the client end.
 func TestAConnectionThatBreaksMidAnswerIsAskedAgain(t *testing.T) {
 	t.Parallel()
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -434,20 +436,26 @@ func TestAConnectionThatBreaksMidAnswerIsAskedAgain(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 
+	accepting := make(chan struct{})
 	go func() {
+		close(accepting)
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
 				return
 			}
-			// Linger zero makes the close a reset rather than a polite end,
-			// which is the failure under test.
+			// Read what the client sent before going: a reset that arrives
+			// before any of the request has been read can surface as a dial
+			// failure on some platforms, which is not the break under test.
+			_, _ = io.ReadAtLeast(conn, make([]byte, 1), 1)
+			// Linger zero makes the close a reset rather than a polite end.
 			if tcp, ok := conn.(*net.TCPConn); ok {
 				_ = tcp.SetLinger(0)
 			}
 			conn.Close()
 		}
 	}()
+	<-accepting
 
 	var waited []time.Duration
 	transport := httpapi.Watching(httpapi.New(httpapi.WithTimeout(time.Second)), &waited)

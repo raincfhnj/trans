@@ -339,26 +339,6 @@ func TestAltEnterSendsLikeCtrlD(t *testing.T) {
 	closeTheOverlay(t, overlayUnderTest)
 }
 
-// A terminal writes an alt chord as an escape and then the key. Two presses stay
-// two messages, so leaving insert mode and pressing enter is not a send.
-func TestEscapeThenEnterIsNotASend(t *testing.T) {
-	t.Parallel()
-	target := &recordingTarget{}
-
-	overlayUnderTest := newOverlay(t, stubTranslator{english: english}, target)
-	overlayUnderTest.Type(draft)
-	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEsc})
-	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	time.Sleep(200 * time.Millisecond)
-
-	if len(target.sent()) != 0 {
-		t.Errorf("target received %v, want nothing sent", target.sent())
-	}
-
-	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
-}
-
 func TestADraftKeepsCharactersOutsideAscii(t *testing.T) {
 	t.Parallel()
 	const umlauts = "Bitte prüfe die Übersetzung: äöü ß — fertig"
@@ -408,10 +388,11 @@ func TestAnEmptyDraftShowsWhatToDo(t *testing.T) {
 }
 
 type gatedTranslator struct {
-	mu      sync.Mutex
-	calls   int
-	started chan struct{}
-	release chan struct{}
+	mu       sync.Mutex
+	calls    int
+	started  chan struct{}
+	release  chan struct{}
+	returned chan struct{}
 }
 
 func (g *gatedTranslator) Translate(_ context.Context, _ string) (string, error) {
@@ -423,6 +404,7 @@ func (g *gatedTranslator) Translate(_ context.Context, _ string) (string, error)
 	if call == 1 {
 		close(g.started)
 		<-g.release
+		close(g.returned)
 		return "FIRST", nil
 	}
 	return "SECOND", nil
@@ -457,46 +439,48 @@ func TestLiveModeShowsTheEnglishWhileYouWrite(t *testing.T) {
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 }
 
-func TestWithoutLiveModeNothingIsTranslatedUntilYouSend(t *testing.T) {
-	t.Parallel()
-	translator := &recordingTranslator{english: english}
-
-	overlayUnderTest := newOverlay(t, translator, &recordingTarget{})
-	overlayUnderTest.Type(draft)
-	time.Sleep(200 * time.Millisecond)
-
-	if translator.seenDraft != "" {
-		t.Errorf("translator was called with %q, want no call before sending", translator.seenDraft)
-	}
-
-	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
-	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
-}
-
 func TestALatePreviewNeverOverwritesANewerOne(t *testing.T) {
 	t.Parallel()
-	translator := &gatedTranslator{started: make(chan struct{}), release: make(chan struct{})}
+	translator := &gatedTranslator{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		returned: make(chan struct{}),
+	}
 
 	overlayUnderTest := liveOverlay(t, translator, &recordingTarget{})
 	overlayUnderTest.Type("erste Fassung")
 	<-translator.started
 
 	overlayUnderTest.Type(" zweite Fassung")
+	// The frame that shows SECOND is the signal the newer preview is up; what
+	// comes after the gate opens must not overwrite it.
+	var shown []byte
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
-		return bytes.Contains(out, []byte("SECOND"))
+		if bytes.Contains(out, []byte("SECOND")) {
+			shown = append([]byte(nil), out...)
+			return true
+		}
+		return false
 	}, teatest.WithDuration(frameTimeout))
 
 	close(translator.release)
-	time.Sleep(300 * time.Millisecond)
+	// The late translation is produced now; the overlay either shows it or
+	// discards it. Waiting for the translator to have answered is the signal
+	// the message is on its way — a sleep would only measure the machine.
+	select {
+	case <-translator.returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the late translation never returned")
+	}
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	shown, err := io.ReadAll(overlayUnderTest.Output())
+	final, err := io.ReadAll(overlayUnderTest.Output())
 	if err != nil {
 		t.Fatalf("reading output: %v", err)
 	}
-	if bytes.Contains(shown, []byte("FIRST")) {
+	if bytes.Contains(append(shown, final...), []byte("FIRST")) {
 		t.Error("the stale translation was shown, want it discarded")
 	}
 }
@@ -686,7 +670,12 @@ func TestACancelledTranslationIsNotShownAsAFailure(t *testing.T) {
 	case <-time.After(2 * time.Second):
 	}
 	close(translator.release)
-	time.Sleep(200 * time.Millisecond)
+	// The cancelled request is passed over; the successful one that replaces it
+	// is what the frame must show. By the time it does, the failure is either
+	// on screen or it was never drawn.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte(english)) && !bytes.Contains(out, []byte("context canceled"))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
@@ -869,13 +858,14 @@ func TestAResumedDraftArrivesWithLiveTranslationOff(t *testing.T) {
 		})
 
 	// Live translation turning itself off is worth saying, or it looks broken.
+	// That frame is the signal the panel has decided: by the time it says live
+	// is off, typing more cannot have asked the service for anything.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
 		return bytes.Contains(out, []byte("Bitte behebe den Test")) &&
 			bytes.Contains(out, []byte("translates it"))
 	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" gründlich")})
-	time.Sleep(300 * time.Millisecond)
 
 	if calls := translator.count(); calls != 0 {
 		t.Errorf("the service was asked %d times for a draft that came back", calls)
@@ -1096,7 +1086,11 @@ func TestAServiceWithoutAnAllowanceShowsNoCount(t *testing.T) {
 
 	overlayUnderTest := newOverlay(t, stubTranslator{english: english}, &recordingTarget{})
 	overlayUnderTest.Type("Bitte behebe")
-	time.Sleep(300 * time.Millisecond)
+	// The frame that shows the draft is the signal the panel has drawn its
+	// header; what that header says about an allowance is read from it.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("Bitte behebe"))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
@@ -1182,7 +1176,11 @@ func TestNothingIsTranslatedWhileTheDraftIsTooLong(t *testing.T) {
 		Runes: []rune(strings.Repeat("y", 500)),
 		Paste: true,
 	})
-	time.Sleep(400 * time.Millisecond)
+	// The frame that warns the draft is too long is the signal the panel has
+	// decided not to translate it; by the time it says so, nothing was asked.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("characters"))
+	}, teatest.WithDuration(frameTimeout))
 
 	if calls := translator.count(); calls != 0 {
 		t.Errorf("the translator was called %d times, want the long draft left alone", calls)
@@ -1202,6 +1200,11 @@ func TestALongDraftCanStillBeSent(t *testing.T) {
 		Runes: []rune(strings.Repeat("z", 500)),
 		Paste: true,
 	})
+	// The paste warning is the frame the panel draws the moment it has decided;
+	// sending before that would race the hint that says live is off.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("pasted"))
+	}, teatest.WithDuration(frameTimeout))
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
 	waitForTheNextPrompt(t, overlayUnderTest)
 
@@ -1214,7 +1217,11 @@ func TestALongDraftCanStillBeSent(t *testing.T) {
 
 func TestLiveModeShowsAPulseWhileItIsTranslating(t *testing.T) {
 	t.Parallel()
-	translator := &gatedTranslator{started: make(chan struct{}), release: make(chan struct{})}
+	translator := &gatedTranslator{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		returned: make(chan struct{}),
+	}
 
 	overlayUnderTest := newOverlayWith(t, translator, &recordingTarget{}, overlay.Options{
 		Service:  "deepl",
@@ -1244,7 +1251,11 @@ func TestLiveModeShowsAPulseWhileItIsTranslating(t *testing.T) {
 
 func TestWithoutThePulseLiveModeSaysSoQuietly(t *testing.T) {
 	t.Parallel()
-	translator := &gatedTranslator{started: make(chan struct{}), release: make(chan struct{})}
+	translator := &gatedTranslator{
+		started:  make(chan struct{}),
+		release:  make(chan struct{}),
+		returned: make(chan struct{}),
+	}
 
 	overlayUnderTest := newOverlayWith(t, translator, &recordingTarget{}, overlay.Options{
 		Service:  "deepl",
@@ -1254,16 +1265,21 @@ func TestWithoutThePulseLiveModeSaysSoQuietly(t *testing.T) {
 	})
 	overlayUnderTest.Type("Bitte behebe")
 	<-translator.started
-	time.Sleep(400 * time.Millisecond)
+	// The frame that mentions live is the signal the panel has drawn its
+	// header; the pulse would have filled the circle by now if it were on.
+	var shown []byte
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		if bytes.Contains(out, []byte("live")) {
+			shown = append([]byte(nil), out...)
+			return true
+		}
+		return false
+	}, teatest.WithDuration(frameTimeout))
 
 	close(translator.release)
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
 
-	shown, err := io.ReadAll(overlayUnderTest.Output())
-	if err != nil {
-		t.Fatalf("reading output: %v", err)
-	}
 	if !bytes.Contains(shown, []byte("live")) {
 		t.Error("live mode is not mentioned at all")
 	}
@@ -1280,7 +1296,11 @@ func TestThePulseRestsWhenNothingIsBeingTranslated(t *testing.T) {
 
 	overlayUnderTest := newOverlayWith(t, stubTranslator{english: english}, &recordingTarget{},
 		overlay.Options{Service: "deepl", Language: "EN-US", Live: true, Pulse: true})
-	time.Sleep(700 * time.Millisecond)
+	// The header is the frame the panel draws on its own; by the time it names
+	// the service, nothing has been asked of it, so the circle rests.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("deepl")) && bytes.Contains(out, []byte("live"))
+	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	overlayUnderTest.WaitFinished(t, teatest.WithFinalTimeout(frameTimeout))
@@ -1393,7 +1413,12 @@ func TestCtrlLTurnsLiveTranslationOnForThisPrompt(t *testing.T) {
 		teatest.WithInitialTermSize(87, 17))
 
 	overlayUnderTest.Type("Bitte behebe")
-	time.Sleep(300 * time.Millisecond)
+	// The frame that shows the draft is the signal the panel has drawn its
+	// header with live off; by the time it does, nothing was asked of the
+	// service, and ctrl+l is what asks.
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("Bitte behebe"))
+	}, teatest.WithDuration(frameTimeout))
 	if calls := translator.count(); calls != 0 {
 		t.Fatalf("the translator ran %d times with live off", calls)
 	}

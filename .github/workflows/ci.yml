@@ -19,6 +19,9 @@ concurrency:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    # A test that hangs should fail the job rather than hold the runner until
+    # the platform kills it; twenty minutes is several full -race runs.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +51,12 @@ jobs:
       # action only runs `golangci-lint run`.
       - name: Formatting
         run: make tools && make fmt-check
+
+      # go.mod and go.sum must match the imports as they stand. `go mod tidy
+      # -diff` writes nothing and fails when the two would change, so a drifted
+      # module file is caught before a developer's machine notices it first.
+      - name: The module file is tidy
+        run: go mod tidy -diff
 
       # The linter is not a stand-in for the standard check: `go vet` is what a
       # reader runs by hand. The one package it cannot check strictly is
@@ -96,9 +105,11 @@ jobs:
 
       # One run, with the race detector and the coverage profile together: the
       # suite is the slowest part of this job and running it twice to count
-      # what it covered would be paying twice for the same answer.
+      # what it covered would be paying twice for the same answer. `-shuffle=on`
+      # reorders the tests every run, so a suite that only passes in one order
+      # says so here rather than on a contributor's machine.
       - name: Test with the race detector
-        run: go test -race -count=1 -coverprofile=coverage.out ./...
+        run: go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
 
       # Coverage is not a target to hit, it is a floor to fall through: the
       # number moves with every change, and a package that quietly loses its
@@ -126,6 +137,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -147,5 +159,7 @@ jobs:
       # windows images do not promise; the race suite runs in the linux job.
       # This is the plain run on the system the program is written for — the
       # tests that need a desktop skip themselves when the session has none.
+      # `-count=1` keeps the cache from answering for a run that did not happen,
+      # and `-shuffle=on` is the same order independence the linux job asks for.
       - name: Test
-        run: go test ./...
+        run: go test -count=1 -shuffle=on ./...

@@ -3,7 +3,6 @@ package settings_test
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,21 +68,15 @@ func newWindow(t *testing.T, options settings.Options) *teatest.TestModel {
 // what is not there against.
 func waitFor(t *testing.T, model *teatest.TestModel, wanted ...string) []byte {
 	t.Helper()
-	var shown bytes.Buffer
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		chunk, err := io.ReadAll(model.Output())
-		if err != nil {
-			t.Fatalf("reading output: %v", err)
+	var shown []byte
+	teatest.WaitFor(t, model.Output(), func(out []byte) bool {
+		if containsAll(out, wanted...) {
+			shown = append([]byte(nil), out...)
+			return true
 		}
-		shown.Write(chunk)
-		if containsAll(shown.Bytes(), wanted...) {
-			return shown.Bytes()
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatalf("the window never showed %q; it said:\n%s", wanted, shown.String())
-	return nil
+		return false
+	}, teatest.WithDuration(3*time.Second))
+	return shown
 }
 
 func containsAll(shown []byte, wanted ...string) bool {

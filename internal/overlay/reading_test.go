@@ -229,10 +229,18 @@ func TestSendingFromReadingWhileASendIsInFlightSendsNothingTwice(t *testing.T) {
 		t.Fatal("the send never started")
 	}
 
-	// Reading is reachable while the send runs — the send key is not.
+	// Reading is reachable while the send runs — the send key is not. Pressing
+	// it from reading still comes back to the draft: the flip is the frame the
+	// panel draws, and by the time the draft is on screen again the key has
+	// been asked for and answered with nothing.
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyTab})
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte("read"))
+	}, teatest.WithDuration(frameTimeout))
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlD})
-	time.Sleep(300 * time.Millisecond)
+	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
+		return bytes.Contains(out, []byte(draft))
+	}, teatest.WithDuration(frameTimeout))
 
 	if submits, delivers := prompter.counts(); submits != 1 || delivers != 0 {
 		t.Errorf("the send key from reading started %d submits and %d deliveries while one was in flight, want none",

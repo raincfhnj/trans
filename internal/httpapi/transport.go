@@ -274,7 +274,11 @@ func transient(err error) bool {
 	var dns *net.DNSError
 	if errors.As(err, &dns) {
 		// A lookup that timed out may answer on the next ask; one that says the
-		// name is not there will say so however many times it is asked.
+		// name is not there will say so however many times it is asked. The
+		// timeout half is recorded rather than exercised: the standard library
+		// offers no resolver hook that fails a lookup with IsTimeout set, and
+		// a test that waited for a real resolver to time out would be measuring
+		// the network rather than this branch.
 		return dns.IsTimeout
 	}
 

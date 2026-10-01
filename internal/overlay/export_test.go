@@ -39,6 +39,14 @@ func ConfirmationOf(m Model, draft, translated string) Model {
 
 func IsConfirming(m Model) bool { return m.stage == confirming }
 
+// IsComposing says the panel is at rest with whatever the box holds: no send on
+// its way, no translation waiting to be let go.
+func IsComposing(m Model) bool { return m.stage == composing }
+
+// DraftHolds is what is in the box, which is what a test asks after a key that
+// was meant to write or keep something there.
+func DraftHolds(m Model) string { return m.draft.Value() }
+
 // IsTranslating says the panel is on its way: a send or the translation a
 // confirmed send waits for has started and has not answered yet.
 func IsTranslating(m Model) bool { return m.stage == translating }

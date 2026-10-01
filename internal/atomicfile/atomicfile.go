@@ -53,6 +53,11 @@ func Write(path string, data []byte) error {
 	// Harmless after the rename, and the way out when anything below fails.
 	defer os.Remove(fresh.Name())
 
+	// The three failures below are recorded rather than exercised: each needs a
+	// filesystem that fails Chmod, Write or Close on a file it just created,
+	// and no standard library hook offers one. A caller that meets them still
+	// gets the path and the reason; the half-made file is already on its way
+	// out through the defer above.
 	if err := fresh.Chmod(privateFile); err != nil {
 		_ = fresh.Close()
 		return fmt.Errorf("keeping %s private: %w", path, err)

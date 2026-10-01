@@ -86,12 +86,6 @@ func pasteMsg(text string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true}
 }
 
-// boxed is box for tests that only need a seeded normal-mode area.
-func boxed(t *testing.T, text string) vimarea.Model {
-	t.Helper()
-	return box(t, text)
-}
-
 func pasted(area vimarea.Model, text string) vimarea.Model {
 	area, _ = area.Update(pasteMsg(text))
 	return area

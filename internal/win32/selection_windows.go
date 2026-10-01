@@ -75,7 +75,7 @@ func systemSelectionPorts() selectionPorts {
 			}
 			return Chord(chord)
 		},
-		waitCopy:   WaitForClipboardChange,
+		waitCopy:   waitForClipboardChange,
 		waitSettle: Pause,
 	}
 }
@@ -125,16 +125,16 @@ func WaitForForeground(ctx context.Context, handle uintptr) bool {
 	}
 }
 
-// WaitForClipboardChange waits, bounded, for the clipboard to change, which is
+// waitForClipboardChange waits, bounded, for the clipboard to change, which is
 // what a pane does when it copies the selection. It answers whether the change
 // came. There is no way to ask which window wrote the clipboard, so a change is
 // taken as the pane's — the chord went nowhere else — and a capture that sees
 // none reads the clipboard anyway, where the token says what happened.
 //
-// It is exported because a delivery waiting for a paste to land is the same
-// wait, and because a name that says what it waits for is worth more at the
-// call site than the loop would be.
-func WaitForClipboardChange(ctx context.Context) bool {
+// It belongs to this package: the wait is part of how a capture is driven, and
+// the delivery that also waits for a pane to settle waits on its input queue
+// rather than on the clipboard.
+func waitForClipboardChange(ctx context.Context) bool {
 	started := clipboardSequence()
 	deadline := time.Now().Add(clipboardWait)
 	for time.Now().Before(deadline) {

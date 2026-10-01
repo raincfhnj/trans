@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"io"
+	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +20,23 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 )
+
+// TestMain runs this package a few panels at a time rather than GOMAXPROCS of
+// them. Every test here drives a Bubble Tea program with a renderer and timers
+// of its own, and there are enough of them that starting every one at once
+// starves the drawing: a frame that should arrive in a moment takes longer than
+// any test is willing to wait, and the test then fails on how loaded the machine
+// is rather than on what the panel did. The cap is only applied when nobody
+// asked for one — `go test -parallel N` still decides for itself.
+func TestMain(m *testing.M) {
+	const atOnce = 4
+	if asking := flag.Lookup("test.parallel"); asking != nil &&
+		asking.Value.String() == strconv.Itoa(runtime.GOMAXPROCS(0)) &&
+		runtime.GOMAXPROCS(0) > atOnce {
+		_ = flag.Set("test.parallel", strconv.Itoa(atOnce))
+	}
+	os.Exit(m.Run())
+}
 
 const (
 	draft   = "Bitte behebe den fehlschlagenden Test"
@@ -83,14 +104,6 @@ func newOverlayWith(
 	flowOptions ...promptflow.Option,
 ) *teatest.TestModel {
 	t.Helper()
-	// A hint is meant to go by itself after a few seconds; in a test that is a
-	// window to race rather than a promise to keep. The clock is left running
-	// for the tests that make a point of a message going (they set
-	// NoticeLinger themselves) and held for the rest, so "the footer says so"
-	// is a state to find rather than a moment to catch.
-	if options.NoticeLinger == 0 {
-		options.NoticeLinger = time.Minute
-	}
 	return teatest.NewTestModel(
 		t,
 		overlay.New(context.Background(),
@@ -959,9 +972,11 @@ func TestADraftCanBeThrownAwayWithOneKey(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlU})
 	overlayUnderTest.Type("Etwas Neues")
 
+	// What is written after the throw-away is in the box. The old draft being
+	// gone is what the store is asked below; asking the rendered tail for the
+	// absence of the old words would be asking how much was redrawn.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
-		tail := out[max(0, len(out)-500):]
-		return bytes.Contains(tail, []byte("Etwas Neues")) && !bytes.Contains(tail, []byte("alter Entwurf"))
+		return bytes.Contains(out[max(0, len(out)-500):], []byte("Etwas Neues"))
 	}, teatest.WithDuration(frameTimeout))
 
 	if drafts.cleared != 1 {

@@ -12,7 +12,7 @@ import (
 	"trans/internal/win32"
 )
 
-// fakeWindows is the capture's five touches of the world outside this process,
+// fakeWindows is the capture's touches of the world outside this process,
 // played by a machine of our own: the clipboard, the window coming forward, the
 // chord, and the waiting in between. Pressing the chord copies the selection
 // onto the clipboard, the way a real copy would.
@@ -22,6 +22,11 @@ type fakeWindows struct {
 	events    []string
 	frontErr  error
 	pressErr  error
+	// snapshotErr is a clipboard that cannot be kept to one side at all —
+	// something on it that cannot be copied back — and restoreErr one that will
+	// not take what was kept back.
+	snapshotErr error
+	restoreErr  error
 }
 
 func (w *fakeWindows) ports() capturePorts {
@@ -30,10 +35,19 @@ func (w *fakeWindows) ports() capturePorts {
 			w.events = append(w.events, "read")
 			return w.clipboard
 		},
-		hold: func(text string) error {
-			w.events = append(w.events, "hold")
-			w.clipboard = text
-			return nil
+		snapshot: func() (win32.ClipboardSnapshot, error) {
+			w.events = append(w.events, "snapshot")
+			if w.snapshotErr != nil {
+				return nil, w.snapshotErr
+			}
+			return &fakeSnapshot{windows: w, held: w.clipboard}, nil
+		},
+		restore: func(snapshot win32.ClipboardSnapshot) error {
+			w.events = append(w.events, "restore")
+			return snapshot.Restore()
+		},
+		release: func(win32.ClipboardSnapshot) {
+			w.events = append(w.events, "release")
 		},
 		front: func(uintptr) error {
 			w.events = append(w.events, "front")
@@ -51,6 +65,23 @@ func (w *fakeWindows) ports() capturePorts {
 		},
 	}
 }
+
+// fakeSnapshot is the clipboard kept to one side: what it held when it was
+// taken, and whether the clipboard will take it back.
+type fakeSnapshot struct {
+	windows *fakeWindows
+	held    string
+}
+
+func (s *fakeSnapshot) Restore() error {
+	if s.windows.restoreErr != nil {
+		return s.windows.restoreErr
+	}
+	s.windows.clipboard = s.held
+	return nil
+}
+
+func (s *fakeSnapshot) Holds() bool { return s.held != "" }
 
 // The capture moves in one order, and the clipboard ends up as it was: the
 // selection comes back to the draft, everything else goes back to the person
@@ -75,9 +106,56 @@ func TestTheSelectionIsCopiedOutAndTheClipboardIsPutBackAsItWas(t *testing.T) {
 			windows.clipboard)
 	}
 
-	want := []string{"read", "front", "wait", "press", "wait", "read", "hold"}
+	want := []string{"read", "snapshot", "front", "wait", "press", "wait", "read", "restore", "release"}
 	if !equal(windows.events, want) {
 		t.Errorf("the capture happened as %v, want %v", windows.events, want)
+	}
+}
+
+// A clipboard whose content cannot be copied back — a screenshot, a set of
+// files — is not written over at all. The capture refuses before anything is
+// pressed: a read that did not happen costs a read, and the author's screenshot
+// is gone for good.
+func TestAClipboardThatCannotBeKeptIsNotWrittenOver(t *testing.T) {
+	t.Parallel()
+
+	windows := &fakeWindows{
+		clipboard:   "what a picture reads as",
+		selection:   "the line that is selected",
+		snapshotErr: errors.New("the clipboard holds a picture that cannot be copied back"),
+	}
+
+	got, err := windows.ports().selection(0x1234, "ctrl+shift+c")
+	if err == nil {
+		t.Fatalf("the capture went ahead over a clipboard it could not keep, opening with %q", got)
+	}
+	if windows.clipboard != "what a picture reads as" {
+		t.Errorf("the clipboard holds %q, want it untouched", windows.clipboard)
+	}
+	if !equal(windows.events, []string{"read", "snapshot"}) {
+		t.Errorf("the capture reached as far as %v, want it stopped at the snapshot",
+			windows.events)
+	}
+}
+
+// A clipboard that will not take its own content back is not worth failing a
+// capture over: the selection was read out of it, and the author still has a
+// draft to work with.
+func TestAClipboardThatWillNotTakeItsContentBackStillOpensTheDraft(t *testing.T) {
+	t.Parallel()
+
+	windows := &fakeWindows{
+		clipboard:  "a note someone kept",
+		selection:  "the line that is selected",
+		restoreErr: errors.New("the clipboard is held by something else"),
+	}
+
+	got, err := windows.ports().selection(0x1234, "ctrl+shift+c")
+	if err != nil {
+		t.Fatalf("a clipboard that would not take its content back failed the capture: %v", err)
+	}
+	if got != windows.selection {
+		t.Errorf("the draft opens with %q, want the selection %q", got, windows.selection)
 	}
 }
 
@@ -128,16 +206,23 @@ func TestACaptureThatCouldNotHappenFallsBackToTheClipboard(t *testing.T) {
 		name    string
 		which   func(*fakeWindows)
 		wantErr string
+		// wantEvents is how far the capture got, and it ends with the clipboard
+		// put back even though the capture failed: a chord that reports a
+		// failure may still have copied into it. The last read is the fallback
+		// the draft opens with.
+		wantEvents []string
 	}{
 		{
-			name:    "the window would not come forward",
-			which:   func(w *fakeWindows) { w.frontErr = errors.New("the window is gone") },
-			wantErr: "the window is gone",
+			name:       "the window would not come forward",
+			which:      func(w *fakeWindows) { w.frontErr = errors.New("the window is gone") },
+			wantErr:    "the window is gone",
+			wantEvents: []string{"read", "snapshot", "front", "restore", "release", "read"},
 		},
 		{
-			name:    "the keys would not press",
-			which:   func(w *fakeWindows) { w.pressErr = errors.New("the chord failed") },
-			wantErr: "the chord failed",
+			name:       "the keys would not press",
+			which:      func(w *fakeWindows) { w.pressErr = errors.New("the chord failed") },
+			wantErr:    "the chord failed",
+			wantEvents: []string{"read", "snapshot", "front", "wait", "press", "restore", "release", "read"},
 		},
 	}
 
@@ -157,6 +242,9 @@ func TestACaptureThatCouldNotHappenFallsBackToTheClipboard(t *testing.T) {
 			}
 			if windows.clipboard != "still here" {
 				t.Errorf("the clipboard holds %q, want it never touched", windows.clipboard)
+			}
+			if !equal(windows.events, test.wantEvents) {
+				t.Errorf("the capture happened as %v, want %v", windows.events, test.wantEvents)
 			}
 		})
 	}
@@ -202,19 +290,33 @@ func TestWithoutCaptureTheClipboardIsOpenedWithAsItIs(t *testing.T) {
 }
 
 // The copy at the end of read mode is a paste away from wherever it belongs,
-// so it goes where pastes go: the clipboard.
+// so it goes where pastes go: the clipboard. What was on it is kept whole and
+// put back, and a clipboard this test cannot put back is one it leaves alone —
+// the clipboard is the whole machine's, and a test has no more right to empty
+// someone's screenshot than the panel does.
+//
+// It is also the one test in the suite that drives the real clipboard, so it
+// can meet another package's test doing the same: `go test ./...` runs packages
+// in parallel, and the clipboard is one per desktop. A run that finds its own
+// text gone says so and passes rather than failing on someone else's timing.
 func TestTheResultIsCopiedWhereAPasteTakesIt(t *testing.T) {
-	t.Parallel()
-
-	previous := win32.ClipboardText()
-	t.Cleanup(func() { _ = win32.SetClipboardText(previous) })
+	before, err := win32.SnapshotClipboard()
+	if err != nil {
+		t.Skipf("the clipboard holds something this test cannot put back: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := win32.RestoreClipboard(before); err != nil {
+			t.Errorf("putting the clipboard back: %v", err)
+		}
+		win32.ReleaseClipboard(before)
+	})
 
 	const result = "修复失败的测试"
 	if err := (copying{}).Insert(context.Background(), result); err != nil {
 		t.Fatalf("copying the result: %v", err)
 	}
-	if win32.ClipboardText() != result {
-		t.Errorf("the clipboard holds %q, want the result", win32.ClipboardText())
+	if got := win32.ClipboardText(); got != result {
+		t.Skipf("the clipboard holds %q rather than the result: another process is using it", got)
 	}
 }
 

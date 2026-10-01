@@ -21,7 +21,7 @@ func (m Model) View() string {
 
 	box := frame.Box(true, m.pane.Width).Height(visible).
 		Render(strings.Join(listed, "\n"))
-	box = frame.Labelled(&m.styles.Mark, &m.styles.Badge, box,
+	box = frame.Labelled(&m.styles.Mark, &m.styles.Badge, &m.styles.Badge, box,
 		frame.HowFarThrough(m.top, visible, len(m.rows)), true)
 	line := lipgloss.Width(box)
 

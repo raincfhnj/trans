@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	"trans/internal/atomicfile"
 )
 
 // A setting is a name and a value on one line, so anything written under some
@@ -130,34 +131,9 @@ func written(value string) string {
 	return value
 }
 
-// write replaces the file in one step, the way a draft is kept: a half-written
-// settings file would refuse to load at the next start, and the file is private
-// while it holds a key.
+// write replaces the file in one step: a half-written settings file would
+// refuse to load at the next start, and the file is private while it holds a
+// key.
 func write(file, content string) error {
-	directory := filepath.Dir(file)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return fmt.Errorf("making %s: %w", directory, err)
-	}
-	fresh, err := os.CreateTemp(directory, "settings-*")
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", file, err)
-	}
-	defer os.Remove(fresh.Name()) // harmless after the rename, a way out before it
-
-	if err := fresh.Chmod(0o600); err != nil {
-		// Closing here can only fail because the file is going away anyway.
-		_ = fresh.Close()
-		return fmt.Errorf("keeping %s private: %w", file, err)
-	}
-	if _, err := fresh.WriteString(content); err != nil {
-		_ = fresh.Close()
-		return fmt.Errorf("writing %s: %w", file, err)
-	}
-	if err := fresh.Close(); err != nil {
-		return fmt.Errorf("writing %s: %w", file, err)
-	}
-	if err := os.Rename(fresh.Name(), file); err != nil {
-		return fmt.Errorf("replacing %s: %w", file, err)
-	}
-	return nil
+	return atomicfile.Write(file, []byte(content))
 }

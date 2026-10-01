@@ -305,6 +305,28 @@ func TestTextThatLooksLikeAMarkerComesBackAsItWas(t *testing.T) {
 	}
 }
 
+// Something marker-shaped inside a protected span used to be enough to make the
+// second marker look repeated: the span was put back first, and what it carried
+// was then counted as a marker of its own. Every marker carries a nonce drawn
+// for this translation, so the two cannot be taken for each other.
+func TestSomethingMarkerShapedInsideASpanIsNotMistakenForAMarker(t *testing.T) {
+	t.Parallel()
+	service := &spyTranslator{}
+	translator := translation.Protecting(service)
+
+	draft := "Die Notation `⟦1⟧` und `berechneRabatt()` stehen in der Doku."
+	translated, err := translator.Translate(context.Background(), draft)
+	if err != nil {
+		t.Fatalf("Translate returned unexpected error: %v", err)
+	}
+
+	for _, span := range []string{"`⟦1⟧`", "`berechneRabatt()`"} {
+		if !strings.Contains(translated, span) {
+			t.Errorf("Translate returned %q, want %s back untouched", translated, span)
+		}
+	}
+}
+
 // Live mode and the allowance counter both look through wrappers.
 func TestProtectingCanBeLookedThrough(t *testing.T) {
 	t.Parallel()

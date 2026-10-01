@@ -25,6 +25,17 @@ jobs:
         with:
           version: latest
 
+      # The linter is not a stand-in for the standard check: `go vet` is what a
+      # reader runs by hand, and golangci-lint's own copy of it is configured
+      # with a site-scoped exception. The one package it cannot check strictly
+      # is internal/win32, where a Windows call hands an address back as a
+      # uintptr; unsafeptr is turned off for that package alone, with the
+      # invariant written at the two conversion sites.
+      - name: Vet
+        run: |
+          go vet $(go list ./... | grep -v 'trans/internal/win32$')
+          go vet -unsafeptr=false ./internal/win32/
+
       # Everything outside the windows files has to build without them.
       - name: Build for linux
         run: GOOS=linux go build ./...
@@ -52,6 +63,13 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+      # The strict run is in the linux job, where the shell can name the one
+      # package that needs unsafeptr turned off; here the whole tree is checked
+      # with that single analyzer disabled, which is the same set of checks on
+      # the platform the program is written for.
+      - name: Vet
+        run: go vet -unsafeptr=false ./...
 
       # No -race here: the detector needs cgo and therefore gcc, which the
       # windows images do not promise; the race suite runs in the linux job.

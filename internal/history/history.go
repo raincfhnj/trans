@@ -1,11 +1,12 @@
 // Package history keeps the prompts a panel has already delivered, so the same
 // sentence can be found again instead of being remembered and retyped. The file
 // holds the author's own prompts, and is written the way the draft store is:
-// privately, and never left half-written.
+// through the same private write, and never left half-written.
 package history
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"trans/internal/atomicfile"
 	"trans/internal/promptflow"
 )
 
@@ -194,28 +196,15 @@ func (s Store) append(entry *Entry) error {
 // something loosened the old file's access, and it is never left half of one
 // record and half of another.
 func (s Store) rewrite(kept []Entry) error {
-	fresh, err := os.CreateTemp(filepath.Dir(s.path), "history-*")
-	if err != nil {
-		return fmt.Errorf("keeping the record of sent prompts: %w", err)
-	}
-	defer os.Remove(fresh.Name())
-
-	// The record holds the author's own prompts.
-	if err := fresh.Chmod(0o600); err != nil {
-		_ = fresh.Close()
-		return fmt.Errorf("keeping the record of sent prompts private: %w", err)
-	}
-	encoder := json.NewEncoder(fresh)
+	var whole bytes.Buffer
+	encoder := json.NewEncoder(&whole)
 	for _, entry := range kept {
 		if err := encoder.Encode(entry); err != nil {
-			_ = fresh.Close()
 			return fmt.Errorf("keeping the record of sent prompts: %w", err)
 		}
 	}
-	if err := fresh.Close(); err != nil {
-		return fmt.Errorf("keeping the record of sent prompts: %w", err)
-	}
-	if err := os.Rename(fresh.Name(), s.path); err != nil {
+
+	if err := atomicfile.Write(s.path, whole.Bytes()); err != nil {
 		return fmt.Errorf("keeping the record of sent prompts: %w", err)
 	}
 	return nil

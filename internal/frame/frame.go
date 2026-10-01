@@ -109,7 +109,12 @@ func Box(active bool, width int) lipgloss.Style {
 // Labelled writes a word into the bottom border, near the right corner, where
 // a box has room for it and nothing else is drawn. The border is one colour,
 // so the line is rebuilt from its characters rather than picked apart.
-func Labelled(border, badge *lipgloss.Style, box, label string, active bool) string {
+//
+// Three styles come in because the windows light their boxes differently: the
+// border of the box being read is not always the style that carries the word,
+// and a window whose badge sits on an accented border has to be able to say so.
+// A caller that wants the same style for both passes it twice.
+func Labelled(border, activeBorder, badge *lipgloss.Style, box, label string, active bool) string {
 	if label == "" {
 		return box
 	}
@@ -125,7 +130,7 @@ func Labelled(border, badge *lipgloss.Style, box, label string, active bool) str
 	}
 
 	if active {
-		border = badge
+		border = activeBorder
 	}
 	at := len(runes) - margin - lipgloss.Width(label)
 	lines[len(lines)-1] = border.Render(string(runes[:at])) +

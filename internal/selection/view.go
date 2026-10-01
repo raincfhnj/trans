@@ -12,7 +12,7 @@ func (m Model) View() string {
 	selectedRows, translationRows := m.rows()
 	content := m.contentWidth()
 
-	selected := frame.Labelled(&m.styles.Mark, &m.styles.Badge,
+	selected := frame.Labelled(&m.styles.Mark, &m.styles.Badge, &m.styles.Badge,
 		frame.Box(false, m.pane.Width).Height(selectedRows).
 			Render(m.sourceBody(content, selectedRows)),
 		"selection", false)
@@ -20,7 +20,7 @@ func (m Model) View() string {
 	text, style := m.translation()
 	total := frame.RowsOf(text, content)
 	body := style.Render(frame.RowsFrom(text, content, m.first, translationRows))
-	translation := frame.Labelled(&m.styles.Mark, &m.styles.Badge,
+	translation := frame.Labelled(&m.styles.Mark, &m.styles.Badge, &m.styles.Badge,
 		frame.Box(true, m.pane.Width).Height(translationRows).Render(
 			frame.Scrolled(&m.styles, content, body, m.first, translationRows, total)),
 		frame.HowFarThrough(m.first, translationRows, total), true)

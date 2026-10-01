@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"trans/internal/httpapi"
 	"trans/internal/translation"
 )
 
@@ -34,7 +35,7 @@ const (
 )
 
 type Client struct {
-	httpClient     *http.Client
+	httpClient     *httpapi.Transport
 	endpoint       string
 	apiKey         string
 	targetLanguage string
@@ -63,7 +64,18 @@ func refuseInsecureRedirect(request *http.Request, _ []*http.Request) error {
 
 func New(apiKey string, options ...Option) *Client {
 	client := &Client{
-		httpClient:     &http.Client{Timeout: defaultTimeout},
+		httpClient: httpapi.New(
+			httpapi.WithTimeout(defaultTimeout),
+			// The guard is built in with the client rather than left to a
+			// caller, so no way of building one can leave the key free to
+			// follow a redirect into the clear.
+			httpapi.WithCheckRedirect(refuseInsecureRedirect),
+			httpapi.WithErrorBodyLimit(maxErrorBodyBytes),
+			// DeepL complains in JSON under "message"; the transport hands the
+			// refusal body to this so the sentence carries the words rather
+			// than the braces.
+			httpapi.WithExplainer(explanation),
+		),
 		endpoint:       endpointFor(apiKey),
 		apiKey:         apiKey,
 		targetLanguage: defaultTargetLanguage,
@@ -71,9 +83,6 @@ func New(apiKey string, options ...Option) *Client {
 	for _, option := range options {
 		option(client)
 	}
-	// After the options, so no way of building a client can leave the key free to
-	// follow a redirect into the clear.
-	client.httpClient.CheckRedirect = refuseInsecureRedirect
 	return client
 }
 

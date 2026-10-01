@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"trans/internal/frame"
 	"trans/internal/history"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -186,10 +187,10 @@ func (m Model) historyView() string {
 		shown = append(shown, m.historyLine(m.historyList[index], index == m.historyAt, width))
 	}
 
-	box := m.labelled(
-		m.box(true).Height(rows).Render(
+	box := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
+		frame.Box(true, m.width).Height(rows).Render(
 			m.scrolled(strings.Join(shown, "\n"), m.historyFrom, rows, total)),
-		howFarThrough(m.historyFrom, rows, total), true)
+		frame.HowFarThrough(m.historyFrom, rows, total), true)
 	line := lipgloss.Width(box)
 	return strings.Join([]string{m.header(line), box, m.historyFooter(line - 1)}, "\n")
 }
@@ -204,7 +205,7 @@ func (m Model) historyLine(entry history.Entry, selected bool, width int) string
 
 	// Two spaces between the time and the prompt, one of which the selection
 	// marker takes: a selected line must not be wider than the others.
-	body := cutTo(first, max(width-len(when)-3, 1))
+	body := frame.CutTo(first, max(width-len(when)-3, 1))
 	if selected {
 		return m.styles.accent.Render("❯ ") +
 			m.styles.faded.Render(when) + "  " +
@@ -222,5 +223,5 @@ func (m Model) historyFooter(inner int) string {
 		m.styles.key.Render("delete") + m.styles.hint.Render(" drop it"),
 		m.styles.key.Render("esc") + m.styles.hint.Render(" back"),
 	}
-	return spread(" "+strings.Join(hints, m.styles.hint.Render(" · ")), "", inner)
+	return frame.Spread(" "+strings.Join(hints, m.styles.hint.Render(" · ")), "", inner)
 }

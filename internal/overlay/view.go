@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"trans/internal/frame"
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
 
@@ -22,8 +23,9 @@ func (m Model) View() string {
 	}
 
 	first, visible, total := m.draftScroll()
-	draft := m.labelled(
-		m.box(true).Render(m.draftBody()), howFarThrough(first, visible, total), true)
+	draft := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
+		frame.Box(true, m.width).Render(m.draftBody()),
+		frame.HowFarThrough(first, visible, total), true)
 	line := lipgloss.Width(draft)
 
 	parts := []string{m.header(line), draft}
@@ -34,9 +36,9 @@ func (m Model) View() string {
 
 	// The window the popup runs in is frame enough; a second one inside it only
 	// takes room from the draft.
-	frame := strings.Join(parts, "\n")
-	m.reportCursor(strings.Count(frame, "\n")+1, true)
-	return frame
+	drawn := strings.Join(parts, "\n")
+	m.reportCursor(strings.Count(drawn, "\n")+1, true)
+	return drawn
 }
 
 // The box's own furniture, in cells: the header above it, its top border, and
@@ -74,11 +76,12 @@ func (m Model) readingView() string {
 	if m.preview == "" && m.previewError == nil {
 		text = "nothing translated yet"
 	}
-	shown := style.Render(rowsFrom(text, m.contentWidth(), m.readingFrom, rows))
+	shown := style.Render(frame.RowsFrom(text, m.contentWidth(), m.readingFrom, rows))
 
-	box := m.labelled(
-		m.box(true).Height(rows).Render(m.scrolled(shown, m.readingFrom, rows, total)),
-		howFarThrough(m.readingFrom, rows, total), true)
+	box := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
+		frame.Box(true, m.width).Height(rows).Render(
+			m.scrolled(shown, m.readingFrom, rows, total)),
+		frame.HowFarThrough(m.readingFrom, rows, total), true)
 	line := lipgloss.Width(box)
 
 	return strings.Join([]string{m.header(line), box, m.readingFooter(line - 1)}, "\n")
@@ -103,15 +106,15 @@ func (m Model) englishPane() string {
 	text, style := m.english()
 
 	rows := englishRows - 2
-	shown := rowsFrom(text, m.contentWidth(), 0, rows)
+	shown := frame.RowsFrom(text, m.contentWidth(), 0, rows)
 	if m.translationIsCut() {
-		shown = cutTo(shown, m.contentWidth()-2) + " …"
+		shown = frame.CutTo(shown, m.contentWidth()-2) + " …"
 	}
-	return m.box(false).Height(rows).Render(style.Render(shown))
+	return frame.Box(false, m.width).Height(rows).Render(style.Render(shown))
 }
 
 func (m Model) translationIsCut() bool {
-	return m.preview != "" && rowsOf(m.preview, m.contentWidth()) > englishRows-2
+	return m.preview != "" && frame.RowsOf(m.preview, m.contentWidth()) > englishRows-2
 }
 
 // english is the translation as it stands, and how it should read: dimmed while it
@@ -242,10 +245,10 @@ func (m Model) footer(line int) string {
 
 	switch {
 	case m.failure != nil:
-		return spread(" "+m.styles.danger.Render("✗ "+m.failure.Error()),
+		return frame.Spread(" "+m.styles.danger.Render("✗ "+m.failure.Error()),
 			m.styles.hint.Render("ctrl+c close"), inner)
 	case m.notice != nil:
-		return spread(" "+m.styles.danger.Render("✗ "+m.notice.Error()),
+		return frame.Spread(" "+m.styles.danger.Render("✗ "+m.notice.Error()),
 			m.escapeSays("dismiss"), inner)
 	case m.hint != "":
 		// A read-mode hint says how to leave in its own words, so the side of
@@ -254,22 +257,22 @@ func (m Model) footer(line int) string {
 		if m.options.Read {
 			side = ""
 		}
-		return spread(" "+m.styles.badge.Render(m.hint), side, inner)
+		return frame.Spread(" "+m.styles.badge.Render(m.hint), side, inner)
 	case m.draftIsTooLong():
-		return spread(
+		return frame.Spread(
 			" "+m.styles.danger.Render(fmt.Sprintf("⚠ %d characters", len([]rune(m.draft.Value()))))+
 				m.styles.hint.Render(" — this box is for prompts you write, not files you paste"),
 			m.styles.hint.Render("ctrl+u discard"), inner)
 	case m.stage == confirming:
-		return spread(
+		return frame.Spread(
 			" "+m.styles.key.Render("ctrl+d")+m.styles.hint.Render(" send this")+
 				m.styles.hint.Render(" · ")+m.styles.key.Render("esc")+
 				m.styles.hint.Render(" keep writing"),
 			m.styles.badge.Render("read it first"), inner)
 	case m.stage == translating:
-		return spread(" "+m.spinner.View()+m.styles.accent.Render(" translating …"), mode, inner)
+		return frame.Spread(" "+m.spinner.View()+m.styles.accent.Render(" translating …"), mode, inner)
 	default:
-		return spread(" "+m.keyHints(roomBeside(mode, inner)), mode, inner)
+		return frame.Spread(" "+m.keyHints(roomBeside(mode, inner)), mode, inner)
 	}
 }
 
@@ -358,38 +361,7 @@ func (m Model) readingFooter(inner int) string {
 	hints = append(hints,
 		m.styles.key.Render(m.sendKey())+m.styles.hint.Render(" "+m.destination()),
 		m.styles.key.Render("esc")+m.styles.hint.Render(" back"))
-	return spread(" "+strings.Join(hints, m.styles.hint.Render(" · ")), "", inner)
-}
-
-// rowsFrom wraps text and keeps the rows from one onwards.
-func rowsFrom(text string, width, from, rows int) string {
-	if width < 1 || rows < 1 {
-		return text
-	}
-
-	lines := strings.Split(wrapped(text, width), "\n")
-	from = min(max(from, 0), max(len(lines)-1, 0))
-	return strings.Join(lines[from:min(from+rows, len(lines))], "\n")
-}
-
-// spread pins left to the start of the line and right to its end.
-func spread(left, right string, line int) string {
-	// Nothing here may outgrow the line: a wrapped footer would push the draft up
-	// and the popup out of the pane.
-	if right == "" {
-		return cutTo(left, line)
-	}
-
-	gap := line - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		// Too narrow for both, and the keys are worth more than the mode.
-		return cutTo(left, line)
-	}
-	return left + strings.Repeat(" ", gap) + right
-}
-
-func cutTo(text string, width int) string {
-	return lipgloss.NewStyle().MaxWidth(width).Render(text)
+	return frame.Spread(" "+strings.Join(hints, m.styles.hint.Render(" · ")), "", inner)
 }
 
 // Short enough for a header: 12.3k/1M.

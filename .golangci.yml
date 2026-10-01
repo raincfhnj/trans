@@ -39,11 +39,13 @@ linters:
           - gosec
           - unparam
       # Win32 hands pointers back as numbers, and there is no way to read what
-      # they point at without unsafe.
+      # they point at without unsafe. The two places that turn one into a
+      # pointer say so themselves with a site-scoped nolint, so this rule no
+      # longer has to excuse the whole package from govet: a longer-lived
+      # suppression than the problem needs is how a real finding hides.
       - path: internal/(win32|tray)/
         linters:
           - gosec
-          - govet
         text: unsafe|G103
       # Bubble Tea's interface takes and returns models by value, and the two
       # small windows keep their whole Options — settings and all — beside the

@@ -11,23 +11,28 @@ import (
 	"trans/internal/win32"
 )
 
-// The capture touches the world outside this process in five places: the
-// clipboard twice, the window that has to be in front, the keys pressed into
-// it, and the waiting in between. A test stands in for Windows with its own.
+// The capture touches the world outside this process in six places: the
+// clipboard read, the whole clipboard kept to one side and put back, the window
+// that has to be in front, the keys pressed into it, and the waiting in
+// between. A test stands in for Windows with its own.
 type capturePorts struct {
-	read  func() string
-	hold  func(string) error
-	front func(uintptr) error
-	press func(string) error
-	wait  func(time.Duration)
+	read     func() string
+	snapshot func() (win32.ClipboardSnapshot, error)
+	restore  func(win32.ClipboardSnapshot) error
+	release  func(win32.ClipboardSnapshot)
+	front    func(uintptr) error
+	press    func(string) error
+	wait     func(time.Duration)
 }
 
 var systemPorts = capturePorts{
-	read:  win32.ClipboardText,
-	hold:  win32.SetClipboardText,
-	front: win32.Activate,
-	press: win32.Chord,
-	wait:  time.Sleep,
+	read:     win32.ClipboardText,
+	snapshot: win32.SnapshotClipboard,
+	restore:  win32.RestoreClipboard,
+	release:  win32.ReleaseClipboard,
+	front:    win32.Activate,
+	press:    win32.Chord,
+	wait:     time.Sleep,
 }
 
 const (
@@ -47,11 +52,28 @@ var errNothingCaptured = errors.New(
 
 // selection copies what is selected in the target window. The clipboard is put
 // back as it was: it belongs to whoever filled it, and the capture borrows it
-// for only the moment it takes to read the selection. When the chord brought
+// for only the moment it takes to read the selection. What is kept is the whole
+// clipboard and not just its text, because what the chord is about to write
+// over is whatever the author copied last — and a clipboard whose only content
+// is something that cannot be copied back, a screenshot or a set of files, is
+// refused rather than written over: a read that did not happen costs a read,
+// while the author's screenshot is gone for good. When the chord brought
 // nothing — nothing was selected — whatever was on the clipboard is what comes
 // back, because that is now the only text there is to read.
 func (ports capturePorts) selection(target uintptr, keys string) (string, error) {
 	before := ports.read()
+
+	kept, err := ports.snapshot()
+	if err != nil {
+		return "", err
+	}
+	// The clipboard goes back the way it was on every way out from here, the
+	// failed ones included: a chord that reports a failure may still have
+	// copied into it, and a snapshot that is never put back is a clipboard the
+	// author has lost. Restoring first and releasing after, which the order of
+	// these two lines is what decides.
+	defer ports.release(kept)
+	defer func() { _ = ports.restore(kept) }()
 
 	if err := ports.front(target); err != nil {
 		return "", err
@@ -63,9 +85,6 @@ func (ports capturePorts) selection(target uintptr, keys string) (string, error)
 	ports.wait(copySettle)
 
 	captured := ports.read()
-	if before != "" {
-		_ = ports.hold(before)
-	}
 	if strings.TrimSpace(captured) == "" {
 		return before, nil
 	}

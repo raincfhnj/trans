@@ -24,7 +24,6 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 - **Vim bindings** — modal editing for the draft box
 - **Draft persistence** — your unfinished prompt is kept between sessions
 - **Code protection** — backticked spans and fenced blocks are not translated
-- **Translation memory** — a sentence paid for once is not paid for again, not even after a restart
 - **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
 - **Tray icon** — the daemon's chords, the settings window and start-at-logon from the notification area
 - **Encrypted key** — the API key is wrapped with Windows DPAPI, never left in the file
@@ -119,9 +118,12 @@ Where the terminal copies on a chord of its own, say which one:
 TRANS_SELECT_COPY=ctrl+shift+c
 ```
 
-The selection is then copied with that chord — clipboard saved, marked, chord
-pressed, read, clipboard put back — instead of read as it stands. A selection
-longer than 4000 characters is cut before it is sent.
+The selection is then copied with that chord — the whole clipboard kept to one
+side first, chord pressed, selection read, clipboard put back — instead of read
+as it stands. Kept whole is the point: a screenshot or a set of files on the
+clipboard is copied back too, and when something on it cannot be copied back the
+capture refuses rather than writing over it. A selection longer than 4000
+characters is cut before it is sent.
 
 ### Read mode
 
@@ -260,8 +262,6 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
 | `TRANS_HISTORY` | `1` | `0` keeps no record of sent prompts |
 | `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
-| `TRANS_TM` | `1` | `0` keeps translations for the session alone |
-| `TRANS_TM_LIMIT` | `5000` | Sentences kept before the oldest are dropped |
 | `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file |
 | `TRANS_TRAY` | `1` | `0` starts the daemon without a tray icon |
 
@@ -307,22 +307,23 @@ sent, which window it went into — and `ctrl+g` opens the record, newest first.
 `enter` puts the selected prompt back into the box exactly as it was written,
 `delete` drops one, `esc` closes. The record holds `TRANS_HISTORY_LIMIT`
 prompts (500 by default), drops the oldest beyond that, and stays on your
-machine in the state directory, written as privately as the drafts.
+machine in the state directory (`%LOCALAPPDATA%\trans\state`). It is created
+for you alone — owner-only access where the filesystem keeps access bits,
+which Windows does not, and there the directory's own permissions are what
+keep it yours.
 
 See [docs/history.md](docs/history.md) for the details.
 
-## Translation memory
+## Live translation and what it costs
 
-While you write, the panel translates sentence by sentence and remembers what
-each sentence translated to — and `tm.jsonl` keeps that memory between
-sessions, so a sentence paid for once is not paid for again after a restart.
-Each sentence is written as it is learned, in the order it was learned, and
-`TRANS_TM_LIMIT` says how many are kept before the oldest are dropped.
-`TRANS_TM=0` keeps the memory for the session alone. The file sits in the
-state directory with the drafts and the record, written the same way — yours
-alone, never half-written — and it holds your own prompts and their English.
+`ctrl+l` translates the draft as you write it, in a second box beside it. The
+draft is split into sentences and each sentence is translated once and
+remembered — with the sentence in front of it, which is what the service is
+told about its meaning — so writing a fourth sentence does not pay for the
+first three again. That memory lives in the running panel and nowhere else:
+nothing you write is written down for it, and closing the panel forgets it.
 
-See [docs/history.md](docs/history.md) for the details.
+See [docs/live-translation.md](docs/live-translation.md) for the details.
 
 ## What leaves your machine
 

@@ -3,10 +3,20 @@
 The daemon, `trans-windowd`, waits for three chords and hands off to
 `trans-window select`, `trans-window open` or `trans-window settings`
 according to which one was pressed. Each of them opens a floating popup over
-the window in front, passing the target window handle along in the environment,
-so everything lands where the key was pressed.
+the window in front, so everything lands where the key was pressed.
 `trans-window open` is the same opening from a command line, with `--target` to
 name another window.
+
+The popup itself is a second process, started as `trans-window popup` with the
+window it draws named on its own command line — `--selection` and `--settings`
+for the two smaller windows, nothing for the panel, and `--read`, `--capture`,
+`--review` or `--probe` for what was asked of it. Switches travel there rather
+than in the environment because a command line can be checked and refused
+before anything is drawn, and because the process that reads it is the only one
+that can be sure who wrote it. What rides in the environment instead is what is
+a setting or a piece of text rather than a switch: the pane to open over, which
+the parent resolved while it was still the window in front, and the selection
+one of the windows was opened for.
 
 The panel is the draft box: on `alt+enter` the draft goes to a translation
 service and the result is handed back to the same window through `wintarget`:
@@ -16,12 +26,16 @@ return, leaving that keystroke to you.
 
 The selection window only reads. The process the chord woke takes the
 selection out of the pane — the clipboard read as it stands by default, and
-with `TRANS_SELECT_COPY` set the clipboard saved, the pane asked to copy, the
-result read and the clipboard put back — and passes the text to its window in
-the environment; there the service is asked and the answer is drawn beside the
-selection. The settings window writes: it changes the rows it
-is asked to change and rewrites the `.env` in place, leaving every other line
-alone. Neither of them delivers anything.
+with `TRANS_SELECT_COPY` set the whole clipboard kept to one side, the pane
+asked to copy, the result read and the clipboard put back — and passes the text
+to its window in the environment; there the service is asked and the answer is
+drawn beside the selection. What is kept is every format the clipboard holds and
+not only its text, because what the chord is about to write over is whatever the
+author copied last; a clipboard whose only content cannot be copied back is
+refused rather than written over, since a read that did not happen costs a read
+while the author's screenshot is gone for good. The settings window writes: it
+changes the rows it is asked to change and rewrites the `.env` in place, leaving
+every other line alone. Neither of them delivers anything.
 
 ## The pieces
 
@@ -34,18 +48,21 @@ alone. Neither of them delivers anything.
 | `overlay` | The *Bubble Tea* program: the draft box, the header and footer, the keys. |
 | `selection` | The window that draws a selection and its translation together. It translates and scrolls; it never delivers. |
 | `settings` | The window that edits the settings: one row each for the service, its options, the panel's behaviour and the three chords, saved through `config.Save`. |
-| `frame` | What the two small windows share: the palette, the boxes with their labels, and the scroll bar. |
+| `frame` | What the three windows share: the palette, the boxes with their labels, the wrapped rows, and the scroll bar. The overlay had drawn its own copies of these before, which is how the two drifted. |
 | `vimarea` | A text area with modal editing, used by the overlay. |
 | `config` | Settings from the environment and the `.env` in the config directory — read by `Load`, prepared and kept by `Prepare`, and rewritten line by line by `Save`. |
-| `draft` | An unfinished prompt on disk, one file per window, written privately and atomically. |
-| `win32`, `wintarget`, `winlog` | The same windows on Windows: the chords the daemon claims, the selection read out of the pane, the window each popup opens over, the paste that delivers a prompt into it, and the log a program without a console has to write to. |
+| `draft`, `history`, `atomicfile` | An unfinished prompt on disk, one file per window; the record of prompts already delivered; and the one write both of them — and the settings file — go through: a fresh file for its owner alone, moved into place so nothing is ever read half-written. |
+| `win32`, `wintarget`, `winlog` | The same windows on Windows: the chords the daemon claims, the selection read out of the pane, the window each popup opens over, the paste that delivers a prompt into it, and the log a program without a console has to write to. Each waits on a signal where Windows offers one — the clipboard sequence number, the window in front, the target's input queue — and only falls back to a named delay where none exists. |
+| `httpapi` | The one HTTP transport the five services share: timeouts, response caps, a redirect guard that keeps a key from leaving https, retry with backoff and `Retry-After`, and the error kinds `translation.Trouble` turns into sentences. |
+| `secrets` | The provider key at rest, wrapped with Windows DPAPI, in a file of its own beside the `.env`. |
 
 `cmd/trans-window` is the composition root for all three windows: it reads the
-settings, asks `service` for the one that was chosen, wires the flow to its
-targets and starts the program named by `TRANS_PANEL_MODE` — the panel, the
-selection, or the settings. `cmd/trans-windowd` is the daemon beside it,
-claiming the three chords and handing off to the subcommand each one names.
-Nothing below them knows which service is in use or how the popup was opened.
+settings, resolves the key from wherever it is kept, asks `service` for the one
+that was chosen, wires the flow to its targets and starts the window its
+command line named — the panel, the selection, or the settings.
+`cmd/trans-windowd` is the daemon beside it, claiming the three chords and
+handing off to the subcommand each one names. Nothing below them knows which
+service is in use or how the popup was opened.
 
 `promptflow` owns the ports it needs — `Translator`, `Target`, `UsageReporter` —
 and imports no adapter package, not even `translation`. Where the two
@@ -103,6 +120,19 @@ service that reports what it has spent can implement `UsageReporter`, and the
 header shows the count. One that can be told the sentence before the one it is
 translating implements `ContextualTranslator`, which is what makes live
 translation cheap with it.
+
+The list is written out in one place on purpose, and there are two things it
+does not do. It does not register services by side effect from their own
+`init()` — a program that links a package to read one of its constants would
+suddenly offer its service too — and it does not load services from outside the
+binary. A build therefore carries every service it knows, and there is no way
+to offer a seventh without rebuilding. For a panel that ships as one `.exe` per
+machine that is the right trade: a plugin boundary would add a versioned
+interface, a load order and a failure mode, in exchange for a smaller binary
+nobody asked for. If it ever stops being right — a service that must be
+installed separately, or a build that must not link the network — the way in is
+a `Register` that takes a factory and a build tag per service, not a change to
+the ports.
 
 ## Working on it
 

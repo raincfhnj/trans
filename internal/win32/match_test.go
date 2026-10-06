@@ -110,3 +110,30 @@ func TestATitleWithAnInvisibleCharacterInItIsStillFound(t *testing.T) {
 		t.Errorf("Find picked %#x, want the window the text names", found.Handle)
 	}
 }
+
+// "Close the panel" closes the windows this program drew and nothing else. A
+// window whose title merely begins with the name is a document of the author's
+// — `trans-panel.md` open in an editor — and closing one of those is not what
+// the tray item means.
+func TestOnlyThePanelsOwnWindowsAreThePanels(t *testing.T) {
+	t.Parallel()
+
+	if !win32.IsPanelWindow(win32.PanelTitle) {
+		t.Error("the panel's own window was not counted as one")
+	}
+	if !win32.IsPanelWindow("trans-panel") {
+		t.Error("the panel's own name was not counted as the panel")
+	}
+
+	for _, title := range []string{
+		"",
+		"trans-panel.md - Notepad",
+		"trans-panel notes",
+		"another trans-panel",
+		"Administrator: trans-panel",
+	} {
+		if win32.IsPanelWindow(title) {
+			t.Errorf("IsPanelWindow(%q) said yes, want only the name as it stands", title)
+		}
+	}
+}

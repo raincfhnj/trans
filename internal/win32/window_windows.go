@@ -22,6 +22,9 @@ var (
 	procIsIconic             = user32.NewProc("IsIconic")
 	procGetForegroundWindow  = user32.NewProc("GetForegroundWindow")
 	procSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
+	procGetWindow            = user32.NewProc("GetWindow")
+	procMonitorFromRect      = user32.NewProc("MonitorFromRect")
+	procGetMonitorInfoW      = user32.NewProc("GetMonitorInfoW")
 	procBringWindowToTop     = user32.NewProc("BringWindowToTop")
 	procShowWindow           = user32.NewProc("ShowWindow")
 	procAttachThreadInput    = user32.NewProc("AttachThreadInput")
@@ -70,17 +73,6 @@ func lastError(proc string) error {
 	}
 	return fmt.Errorf("%s failed: %w", proc, err)
 }
-
-type point struct{ X, Y int32 }
-
-type rect struct{ Left, Top, Right, Bottom int32 }
-
-func (r rect) width() int32  { return r.Right - r.Left }
-func (r rect) height() int32 { return r.Bottom - r.Top }
-
-type coord struct{ X, Y int16 }
-
-type smallRect struct{ Left, Top, Right, Bottom int16 }
 
 type message struct {
 	Window  uintptr
@@ -145,6 +137,15 @@ const (
 
 	hwndTopMost = ^uintptr(0)
 
+	// gwHwndNext is the window under this one in the Z-order, which is how a
+	// search for the pane a person is working in walks past a helper holding
+	// the keyboard.
+	gwHwndNext = 2
+
+	// monitorDefaultToNearest is what MonitorFromRect answers with for a place
+	// that lies on no monitor at all: the nearest one rather than nothing.
+	monitorDefaultToNearest = 2
+
 	swpNoSize       = 0x0001
 	swpNoMove       = 0x0002
 	swpNoActivate   = 0x0010
@@ -158,26 +159,8 @@ func Windows() []Window {
 	var found []Window
 
 	callback := syscall.NewCallback(func(handle uintptr, _ uintptr) uintptr {
-		if call(procIsWindowVisible, handle) == 0 {
-			return 1
-		}
-		// A program keeps small windows of its own under the same title as the
-		// one a person works in — a helper, a tooltip — and a panel opened over
-		// one of those would be opened over nothing.
-		area := windowRect(handle)
-		if area.width() < 200 || area.height() < 120 {
-			return 1
-		}
-		length := int32(call(procGetWindowTextLengthW, handle))
-		if length <= 0 {
-			return 1
-		}
-		buffer := make([]uint16, length+1)
-		if call(procGetWindowTextW, handle, uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer))) == 0 {
-			return 1
-		}
-		if title := syscall.UTF16ToString(buffer); title != "" {
-			found = append(found, Window{Handle: handle, Title: title})
+		if opensOver(handle) {
+			found = append(found, Window{Handle: handle, Title: Title(handle)})
 		}
 		return 1
 	})
@@ -186,8 +169,54 @@ func Windows() []Window {
 	return found
 }
 
+// A window smaller than this is a program's own helper — a message window, a
+// tooltip, a tray's hidden window — rather than a pane a person works in. The
+// listing of windows, the search for a panel's own window and the choice of a
+// pane to open over all draw the line here.
+const (
+	minPaneWidth  = 200
+	minPaneHeight = 120
+)
+
+// opensOver says whether a window is one a panel can be opened over: a window
+// a person could point at, which is a visible one, large enough to sit on, and
+// named. A tray's own hidden window is none of those, and a panel opened over
+// one is opened over nothing — while a finished prompt would be pasted into it.
+func opensOver(handle uintptr) bool {
+	if handle == 0 || call(procIsWindowVisible, handle) == 0 {
+		return false
+	}
+	area := windowRect(handle)
+	if area.width() < minPaneWidth || area.height() < minPaneHeight {
+		return false
+	}
+	return Title(handle) != ""
+}
+
+// FrontPane is the pane a popup is opened over when nothing named one: the
+// window holding the keyboard when it is one a panel can sit on, and the first
+// one under it that is when it is not.
+//
+// A helper window can hold the keyboard. The tray gives its own window the
+// foreground before its menu is tracked — Windows insists on it — and the menu
+// does not hand it back; the task bar, an input window and a notification can
+// take it too. Opening over whatever happens to hold it is how a panel ends up
+// centred over a 136-pixel window in the corner of the screen, and how a
+// finished prompt would be pasted into a window nobody is looking at.
+func FrontPane() Window {
+	for handle := call(procGetForegroundWindow); handle != 0; handle = call(procGetWindow, handle, gwHwndNext) {
+		if opensOver(handle) {
+			return Window{Handle: handle, Title: Title(handle)}
+		}
+	}
+	return Window{}
+}
+
 // Foreground is the window the keys are going to right now — the pane a
-// keybinding was pressed in when there is no keybinding to ask.
+// keybinding was pressed in when there is no keybinding to ask. It answers with
+// whatever holds the keyboard, helper window or not: FrontPane is what finds
+// the pane to open over, and a delivery asks this one whether its target still
+// holds the keyboard at all.
 func Foreground() Window {
 	handle := call(procGetForegroundWindow)
 	if handle == 0 {

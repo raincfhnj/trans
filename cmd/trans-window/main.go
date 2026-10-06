@@ -82,10 +82,14 @@ func main() {
 	exit(runPopup(nil))
 }
 
+// exit ends the program over a failure. The words go to the standard error,
+// which is a console when a person asked for this from one and nowhere at all
+// when the daemon opened it; the log is what says it happened either way.
 func exit(err error) {
 	if err == nil {
 		return
 	}
+	winlog.Note("panel", "gave up: %v", err)
 	fmt.Fprintln(os.Stderr, "trans-window:", err)
 	os.Exit(1)
 }
@@ -294,8 +298,11 @@ func parsePopup(arguments []string) (popupOptions, error) {
 }
 
 // popupWindow is the window a popup belongs over: the one named in the
-// setting, and — when nothing is named — the one in front, which is the pane
-// the chord was pressed in.
+// setting, and — when nothing is named — the pane in front, which is the one
+// the chord was pressed in. That pane is not whatever holds the keyboard at
+// the moment: the tray’s own hidden window can, and a panel opened over
+// that is opened over a box in the corner of the screen rather than over the
+// window the author was writing in.
 func popupWindow(setting string) (win32.Window, error) {
 	if strings.TrimSpace(setting) == "" {
 		setting = os.Getenv("TRANS_TARGET")
@@ -303,9 +310,10 @@ func popupWindow(setting string) (win32.Window, error) {
 	if strings.TrimSpace(setting) != "" {
 		return win32.Resolve(win32.ParseTarget(setting))
 	}
-	window := win32.Foreground()
+	window := win32.FrontPane()
 	if window.Handle == 0 {
-		return win32.Window{}, errors.New("no window in front to open the panel over")
+		return win32.Window{}, errors.New("no pane in front to open the panel over: " +
+			"a panel opens over a visible window large enough to work in")
 	}
 	return window, nil
 }
@@ -449,10 +457,11 @@ func runPopup(arguments []string) error {
 	if options.selection || options.settings {
 		if resolveErr != nil {
 			// These windows only put something on the screen: opening them
-			// where they can beats not opening at all because the pane in
-			// front could not be found.
+			// where they can beats not opening at all because the pane named
+			// for them could not be found. The pane in front is where they go
+			// then, which is where the chord was pressed.
 			winlog.Note("panel", "target %q: %v", cfg.Target, resolveErr)
-			window = win32.Window{}
+			window = win32.FrontPane()
 		}
 		if options.selection {
 			return selectionWindow(window, &cfg)

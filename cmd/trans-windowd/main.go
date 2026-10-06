@@ -204,7 +204,15 @@ func startTray(settings *config.Settings, here uint32) {
 					complain("the panel did not open: %v", err)
 				}
 			case tray.ClosePanel:
-				note("closing %d panel window(s)", win32.ClosePanels())
+				// Every window asked to close is written down with the handle
+				// and title it carried, so a close that reached something else
+				// can be read back afterwards instead of guessed at from a
+				// count. The count is still the last word on the line.
+				closed := win32.ClosePanels()
+				for _, window := range closed {
+					note("asking %#x %q to close", window.Handle, window.Title)
+				}
+				note("closed %d panel window(s)", len(closed))
 			case tray.Settings:
 				if err := open("settings"); err != nil {
 					complain("the settings window did not open: %v", err)

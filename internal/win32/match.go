@@ -14,6 +14,20 @@ type Window struct {
 	Title  string
 }
 
+// PanelTitle is what the panel calls its console, so that it can find the
+// window drawing it without caring which program draws it. The selection and
+// the settings give themselves the same name: all three are windows of this
+// program, drawn over a pane and closed together.
+const PanelTitle = "trans-panel"
+
+// IsPanelWindow says whether a window is one this program drew. The name is
+// matched as it stands: a window that merely begins with it is a document of
+// the author's — `trans-panel.md` open in an editor — and closing one of those
+// is not what "close the panel" means.
+func IsPanelWindow(title string) bool {
+	return title == PanelTitle
+}
+
 // Find picks the window a target setting names. The title as written is looked
 // for first, because that is what someone who copied a title means; a setting
 // that matches nothing that way is taken as a regular expression, which is what

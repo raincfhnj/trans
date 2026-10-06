@@ -127,6 +127,7 @@ var (
 	procAppendMenuW      = user32.NewProc("AppendMenuW")
 	procTrackPopupMenu   = user32.NewProc("TrackPopupMenu")
 	procGetCursorPos     = user32.NewProc("GetCursorPos")
+	procGetForegroundWin = user32.NewProc("GetForegroundWindow")
 	procSetForegroundWin = user32.NewProc("SetForegroundWindow")
 	procLoadIconW        = user32.NewProc("LoadIconW")
 	procGetModuleHandleW = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW")
@@ -373,11 +374,19 @@ func (state *trayState) showMenu() {
 	call(procGetCursorPos, uintptr(unsafe.Pointer(&position)))
 	// The classic sequence: the window has to be in front before the menu is
 	// tracked, or the menu stays on screen after the click that opened it.
+	// The keyboard is only borrowed for the menu and is given back before
+	// anything the menu chose is done: this window is hidden and 136 pixels
+	// wide, and a panel left to open over it — or a prompt delivered into it —
+	// is a panel aimed at a window nobody can see.
+	lent := call(procGetForegroundWin)
 	call(procSetForegroundWin, uintptr(state.window))
 	chosen, _, _ := procTrackPopupMenu.Call(menu,
 		tpmRightButton|tpmReturnCmd, uintptr(position.X), uintptr(position.Y),
 		0, uintptr(state.window), 0)
 	call(procPostMessageW, uintptr(state.window), wmNull, 0, 0)
+	if lent != 0 && lent != uintptr(state.window) {
+		call(procSetForegroundWin, lent)
+	}
 
 	if chosen != 0 {
 		state.chose(Item(chosen))

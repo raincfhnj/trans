@@ -13,10 +13,6 @@ import (
 	"unsafe"
 )
 
-// PanelTitle is what the panel calls its console, so that it can find the window
-// drawing it without caring which program draws it.
-const PanelTitle = "trans-panel"
-
 // PopupOptions says how much room the panel wants and which window it opens over.
 type PopupOptions struct {
 	Over   uintptr
@@ -44,10 +40,15 @@ func OpenOver(options PopupOptions) error {
 	if err != nil {
 		return err
 	}
-	area := windowRect(over.Handle)
-	if area.width() <= 0 || area.height() <= 0 {
-		return fmt.Errorf("the window %q has no area to open over", over.Title)
+	// A pane is a window a person works in. Opening over anything else — a
+	// tray's hidden helper, a tooltip, a window nobody can see — would centre a
+	// panel over a box in the corner of the screen and hand it the finished
+	// prompt as well.
+	if !opensOver(over.Handle) {
+		return fmt.Errorf("the window %q is not a pane to open over: "+
+			"a panel opens over a visible window large enough to work in", over.Title)
 	}
+	area := windowRect(over.Handle)
 
 	// The panel needs something to draw into: a process with no console has
 	// nowhere for the overlay to go, and that is worth failing on here. The
@@ -109,8 +110,11 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 		return errors.New("the window drawing this console has no size")
 	}
 
-	left := area.Left + (area.width()-present.width())/2
-	top := area.Top + (area.height()-present.height())/2
+	// Where the panel goes is decided here and nowhere else: centred over the
+	// pane it belongs on and kept inside the room the screen gives it, so that
+	// the window is one a person can see and reach whatever the pane turned out
+	// to be.
+	left, top := placedWithin(present.width(), present.height(), area, workAreaNear(area))
 
 	for attempt := 0; attempt < 6; attempt++ {
 		call(procSetWindowPos, host, hwndTopMost,
@@ -122,6 +126,30 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 		time.Sleep(60 * time.Millisecond)
 	}
 	return fmt.Errorf("the window would not stay at %d,%d", left, top)
+}
+
+// monitorInfo is what GetMonitorInfoW fills in about one screen: the whole of
+// it and the work area, which is the screen with the task bar taken out.
+type monitorInfo struct {
+	Size    uint32
+	Monitor rect
+	Work    rect
+	Flags   uint32
+}
+
+// workAreaNear is the room the screen gives a window: the work area of the
+// monitor this place is on. A window is placed inside it and never over the
+// task bar or past the screen's edge — the frame is off a popup, so a window
+// stranded outside the screen has nothing left to drag it back with.
+func workAreaNear(place rect) rect {
+	monitor := call(procMonitorFromRect, uintptr(unsafe.Pointer(&place)), monitorDefaultToNearest)
+	info := monitorInfo{Size: uint32(unsafe.Sizeof(monitorInfo{}))}
+	if monitor != 0 && call(procGetMonitorInfoW, monitor, uintptr(unsafe.Pointer(&info))) != 0 {
+		return info.Work
+	}
+	// Nothing answers for a monitor: the primary screen is where a window goes
+	// then, which is at least a screen.
+	return rect{Right: int32(call(procGetSystemMetrics, 0)), Bottom: int32(call(procGetSystemMetrics, 1))}
 }
 
 // wentTo says whether a window is where it was put, give or take the rounding a
@@ -186,7 +214,7 @@ func NameConsole(title string) {
 func hostWindow() uintptr {
 	if own := call(procGetConsoleWindow); own != 0 {
 		area := windowRect(own)
-		if area.width() >= 200 && area.height() >= 120 {
+		if area.width() >= minPaneWidth && area.height() >= minPaneHeight {
 			return own
 		}
 	}
@@ -205,7 +233,7 @@ func HostWindow(title string) uintptr {
 			return 1
 		}
 		area := windowRect(handle)
-		if area.width() < 200 || area.height() < 120 {
+		if area.width() < minPaneWidth || area.height() < minPaneHeight {
 			return 1
 		}
 		length := int32(call(procGetWindowTextLengthW, handle))
@@ -399,17 +427,24 @@ func RegisterHotkey(id, modifiers, key uint32) error {
 }
 
 // ClosePanels asks every window the panel gave itself a name to close, and
-// answers how many were asked. There is no panel process to toggle — one is
-// spawned for each press and ends when its window does — so "close the panel"
-// is this: find the windows that said what they are and tell them to go.
-func ClosePanels() int {
-	asked := 0
+// answers the windows that were asked. There is no panel process to toggle —
+// one is spawned for each press and ends when its window does — so "close the
+// panel" is this: find the windows that said what they are and tell them to go.
+// Only windows that carry the name as it stands are asked: a document of the
+// author's that merely starts with it is not this program's to close.
+//
+// The windows come back rather than a count because this is a destructive
+// operation on windows that merely look like ours: the caller writes down
+// each handle and title it asked to close, so a close that reached the wrong
+// window is traceable in the log afterwards instead of being one number.
+func ClosePanels() []Window {
+	var asked []Window
 	for _, window := range Windows() {
-		if !strings.HasPrefix(window.Title, PanelTitle) {
+		if !IsPanelWindow(window.Title) {
 			continue
 		}
 		if call(procPostMessageW, window.Handle, wmClose, 0, 0) != 0 {
-			asked++
+			asked = append(asked, window)
 		}
 	}
 	return asked

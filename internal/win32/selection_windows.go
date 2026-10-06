@@ -80,11 +80,13 @@ func systemSelectionPorts() selectionPorts {
 	}
 }
 
-// foregroundTarget is the window the copy is meant for: whatever is in front
-// when the capture starts, because that is where the chord was pressed. A
-// capture has no handle of its own to work from.
+// foregroundTarget is the window the copy is meant for: the pane in front when
+// the capture starts, which is where the selection is. A helper window can hold
+// the keyboard at that moment — the tray's own after its menu, the task bar —
+// so this is the pane a popup would open over, found the same way, rather than
+// whatever happens to hold the keys.
 func foregroundTarget() uintptr {
-	return Foreground().Handle
+	return FrontPane().Handle
 }
 
 // The bounds on the waits a delivery does, and the steps it polls in. Each is a

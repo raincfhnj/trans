@@ -253,6 +253,9 @@ type trayState struct {
 	window  windows.HWND
 	icon    notifyIconData
 	menu    windows.Handle
+	// ownIcon is the mark this program drew, to give back once the shell is
+	// done with it; the system's own icon is not this program's to free.
+	ownIcon windows.Handle
 }
 
 func (state *trayState) create() error {
@@ -280,21 +283,34 @@ func (state *trayState) create() error {
 	}
 	state.window = windows.HWND(window)
 
-	// IDI_APPLICATION is the icon the system already has. A tray icon of our
-	// own would mean shipping a resource file for a program that never draws
-	// anything else.
-	icon, _, _ := procLoadIconW.Call(0, uintptr(idiApplication))
+	// The icon is this program's own mark rather than the system's, drawn from
+	// the same shape the panel signs its draft box with.
+	icon, iconErr := markIcon()
+	if iconErr != nil {
+		// A mark that cannot be drawn is not worth refusing the tray over; the
+		// system's own icon stands in for it.
+		loaded, _, _ := procLoadIconW.Call(0, uintptr(idiApplication))
+		icon = windows.Handle(loaded)
+	} else {
+		state.ownIcon = icon
+	}
 
 	state.icon = notifyIconData{
 		Window:          state.window,
 		ID:              1,
 		Flags:           nifMessage | nifIcon | nifTip,
 		CallbackMessage: callbackMessage,
-		Icon:            windows.Handle(icon),
+		Icon:            icon,
 	}
 	copy(state.icon.Tip[:], windows.StringToUTF16(state.options.Tip))
 	state.icon.Size = uint32(unsafe.Sizeof(state.icon))
 	if err := state.shell(nimAdd); err != nil {
+		// The tray never appeared, so the mark drawn for it is this program's
+		// to give back: remove is only deferred once create has answered that
+		// the tray is there, and a mark that is not freed here is not freed at
+		// all.
+		freeIcon(state.ownIcon)
+		state.ownIcon = 0
 		return err
 	}
 	return nil
@@ -316,6 +332,7 @@ func (state *trayState) remove() {
 	if state.menu != 0 {
 		call(procDestroyMenu, uintptr(state.menu))
 	}
+	freeIcon(state.ownIcon)
 	if state.window != 0 {
 		call(procDestroyWindow, uintptr(state.window))
 	}

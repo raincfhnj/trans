@@ -8,12 +8,14 @@ import (
 )
 
 // The plugin signs the draft box while there is nothing in it, in the corner
-// furthest from where the writing starts. Braille cells are one column each.
+// furthest from where the writing starts. The mark is the panel's own: a bar
+// with a stem that reads as a T, and an arrow saying what the panel does with a
+// draft. Braille cells are one column each.
 var logo = []string{
-	"⠀⠀⠀⢀⣀⣠⣤⣤⣤⡀",
-	"⠀⠀⣰⣿⣿⣿⣿⣿⣿⡿",
-	"⢀⣼⣿⣿⣿⡟⠛⢻⡿⣧",
-	"⠘⣿⠏⣸⠏⢷⢀⡾⢁⣿",
+	"\u2880\u28c0\u28c0\u28c0\u28c0\u28c0\u28f8\u28e6\u2840\u2800",
+	"\u2838\u283f\u28bf\u28ff\u287f\u283f\u28bf\u28ff\u281f\u2803",
+	"\u2800\u2800\u28b8\u28ff\u2847\u2800\u2818\u2801\u2800\u2800",
+	"\u2800\u2800\u28b8\u28ff\u2847\u2800\u2800\u2800\u2800\u2800",
 }
 
 // sign puts the mark in the bottom right of the box, on lines that show nothing.

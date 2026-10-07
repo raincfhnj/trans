@@ -15,7 +15,7 @@ import (
 
 // The braille the plugin signs the empty box with. Only the first line is needed
 // to tell whether it is there.
-const logoLine = "⢀⣼⣿⣿⣿⡟⠛⢻⡿⣧"
+const logoLine = "\u2880\u28c0\u28c0\u28c0\u28c0\u28c0\u28f8\u28e6\u2840\u2800"
 
 func drawn(t *testing.T, options overlay.Options) (empty, written string) {
 	t.Helper()

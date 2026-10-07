@@ -287,6 +287,9 @@ or set in the environment. `TRANS_TARGET` is the window the panel opens over
 when nothing is named in front of it, and is read by the panel rather than
 edited anywhere.
 
+See [docs/settings.md](docs/settings.md) for what every setting does and how to
+use it.
+
 ### Services that need no key
 
 ```

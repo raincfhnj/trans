@@ -1,21 +1,16 @@
 package win32
 
-// The shapes the Win32 calls answer with, and the one decision written over
-// them that has to hold on every screen: where a window is put. The shapes are
-// here rather than in the files that call Windows because that decision is
-// plain arithmetic — it is checked on any system, with no desktop and no call
-// into Windows at all.
-
-type point struct{ X, Y int32 }
+// The shape the placement is written over, and the decision itself that has to
+// hold on every screen: where a window is put. It lives here rather than in the
+// file that calls Windows because the decision is plain arithmetic — it is
+// checked on any system, with no desktop and no call into Windows at all. The
+// other Win32 shapes, which nothing but those calls read, are beside it in
+// place_windows.go.
 
 type rect struct{ Left, Top, Right, Bottom int32 }
 
 func (r rect) width() int32  { return r.Right - r.Left }
 func (r rect) height() int32 { return r.Bottom - r.Top }
-
-type coord struct{ X, Y int16 }
-
-type smallRect struct{ Left, Top, Right, Bottom int16 }
 
 // placedWithin is where the top left of a window of this size goes: centred
 // over the place it belongs on, and kept inside the room the screen gives it.

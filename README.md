@@ -6,6 +6,8 @@
 
 Write prompts in the language you think in and get them translated to English for your coding agent. A native Windows translation panel that opens over your terminal window.
 
+![trans — write in your own language, send to the agent in English](docs/demo.gif)
+
 ## Why this exists
 
 You think faster in your own language. But an agent answers in the language it was asked in, so your prompts end up in the replies, the comments, the commits and the docs. Translate the prompt and the drift has no source.

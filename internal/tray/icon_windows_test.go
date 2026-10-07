@@ -32,17 +32,17 @@ func TestTheMarkIsDrawnOnARoundedSquare(t *testing.T) {
 	}
 
 	// The bar and the stem are white, and so is the arrow's tip on the right.
-	if !white(13, 13) {
+	if !white(28, 26) {
 		t.Error("the bar is not drawn white")
 	}
-	if !white(14, 22) {
+	if !white(28, 44) {
 		t.Error("the stem is not drawn white")
 	}
-	if !white(26, 15) {
+	if !white(52, 30) {
 		t.Error("the arrow is not drawn white")
 	}
 	// And the square's own colour shows where the mark is not.
-	if white(4, 28) {
+	if white(8, 26) {
 		t.Error("the background is white where the mark is not")
 	}
 }

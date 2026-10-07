@@ -15,9 +15,21 @@ import (
 // It is drawn here rather than shipped as a resource so the program stays one
 // file to hand round and the mark is this program's own.
 const (
-	iconSize = 32
-	// iconCorners is how far the square's corners are rounded.
-	iconCorners = 8
+	// iconSize is the width and height of the icon bitmap the shell is handed.
+	// It is drawn well above the size the notification area shows, so the
+	// scaling it does keeps the edges of the mark smooth rather than blocky.
+	iconSize = 64
+	// shapeSize is the side of the space the mark itself is drawn in, so the
+	// shapes below can be written once in whole numbers and the bitmap can be
+	// made as large as the shell likes without rewriting them.
+	shapeSize = 32.0
+	// iconCorners is how far the square's corners are rounded, in the shape's
+	// own space.
+	iconCorners = 8.0
+	// iconSample is how many points each pixel is judged at, per side. A pixel
+	// on the edge of the square or the mark is then part of both, which is what
+	// turns a staircase of blocks into a smooth edge.
+	iconSample = 4
 )
 
 var (
@@ -87,7 +99,7 @@ func markIcon() (windows.Handle, error) {
 	mask := make([]byte, iconSize*iconSize/8)
 	for y := 0; y < iconSize; y++ {
 		for x := 0; x < iconSize; x++ {
-			if !insideSquare(float64(x)+0.5, float64(y)+0.5) {
+			if !insideSquare(shapeAt(x), shapeAt(y)) {
 				mask[y*iconSize/8+x/8] |= 0x80 >> uint(x%8)
 			}
 		}
@@ -130,33 +142,60 @@ func iconFailure(proc string, why error) error {
 	return fmt.Errorf("%s failed: %w", proc, why)
 }
 
-// drawMark fills the pixels with the rounded square and the mark on it.
+// shapeAt maps a pixel coordinate on the bitmap to the shape's own space.
+func shapeAt(pixel int) float64 {
+	return (float64(pixel) + 0.5) * shapeSize / iconSize
+}
+
+// drawMark fills the pixels with the rounded square and the mark on it. Each
+// pixel is judged at a grid of points rather than at its middle alone, so a
+// pixel on an edge is a little of both sides and the mark reads as smooth
+// rather than as a staircase of blocks.
 func drawMark(pixels *[iconSize * iconSize * 4]byte) {
 	for y := 0; y < iconSize; y++ {
 		for x := 0; x < iconSize; x++ {
+			// Colour and coverage summed over the samples within the pixel.
+			var red, green, blue, cover float64
+			for sy := 0; sy < iconSample; sy++ {
+				for sx := 0; sx < iconSample; sx++ {
+					px := (float64(x) + (float64(sx)+0.5)/iconSample) * shapeSize / iconSize
+					py := (float64(y) + (float64(sy)+0.5)/iconSample) * shapeSize / iconSize
+					if !insideSquare(px, py) {
+						continue
+					}
+					r, g, b := squareColour(px, py)
+					if insideMark(px, py) {
+						r, g, b = 255, 255, 255
+					}
+					red += float64(r)
+					green += float64(g)
+					blue += float64(b)
+					cover++
+				}
+			}
+
 			at := (y*iconSize + x) * 4
-			// The DIB's pixels are blue, green, red, alpha, in that order.
-			px, py := float64(x)+0.5, float64(y)+0.5
-			if !insideSquare(px, py) {
+			// The DIB's pixels are blue, green, red, alpha, in that order. The
+			// alpha is how much of the pixel the square covers, which is what
+			// keeps the rounded corners clear.
+			if cover == 0 {
 				pixels[at+0], pixels[at+1], pixels[at+2], pixels[at+3] = 0, 0, 0, 0
 				continue
 			}
-			red, green, blue := squareColour(px, py)
-			if insideMark(px, py) {
-				red, green, blue = 255, 255, 255
-			}
-			pixels[at+0] = byte(blue)
-			pixels[at+1] = byte(green)
-			pixels[at+2] = byte(red)
-			pixels[at+3] = 255
+			total := float64(iconSample * iconSample)
+			pixels[at+0] = byte(blue / cover)
+			pixels[at+1] = byte(green / cover)
+			pixels[at+2] = byte(red / cover)
+			pixels[at+3] = byte(255 * cover / total)
 		}
 	}
 }
 
-// insideSquare is whether a pixel is within the rounded square.
+// insideSquare is whether a point is within the rounded square.
 func insideSquare(x, y float64) bool {
-	const lo, hi = 2.0, iconSize - 2.0
-	const r = iconCorners
+	const lo = 2.0
+	hi := shapeSize - 2.0
+	r := iconCorners
 	if x < lo || x > hi || y < lo || y > hi {
 		return false
 	}
@@ -187,10 +226,10 @@ func insideSquare(x, y float64) bool {
 	return cx*cx+cy*cy <= r*r
 }
 
-// squareColour is the square's background at a pixel: a diagonal gradient from
+// squareColour is the square's background at a point: a diagonal gradient from
 // an indigo at the top left to a blue at the bottom right, as the icon has.
 func squareColour(x, y float64) (red, green, blue int) {
-	t := (x + y) / (2 * iconSize)
+	t := (x + y) / (2 * shapeSize)
 	if t < 0 {
 		t = 0
 	}

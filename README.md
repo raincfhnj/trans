@@ -21,12 +21,34 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 - **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API
 - **No key required** — free services work without any API key
 - **Live translation** — see the English as you write
-- **Vim bindings** — modal editing for the draft box
+- **Vim bindings** — modal editing for the draft box ([docs/vim.md](docs/vim.md))
 - **Draft persistence** — your unfinished prompt is kept between sessions
 - **Code protection** — backticked spans and fenced blocks are not translated
 - **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
 - **Tray icon** — the daemon's chords, the settings window and start-at-logon from the notification area
 - **Encrypted key** — the API key is wrapped with Windows DPAPI, never left in the file
+
+## Installation
+
+```powershell
+# winget
+winget install raincfhnj.trans
+
+# scoop
+scoop install raincfhnj.trans
+```
+
+Both manifests live under [packaging/](packaging/) and install from the
+release archives. Until the first `v*` tag is published they resolve to
+nothing — build from source instead:
+
+```powershell
+make windows   # both programs, written to bin\
+```
+
+`bin\` only has to be on `PATH` to type `trans-window …` in a shell: the
+programs find each other by sitting in the same directory, so the panel and
+the daemon work without it.
 
 ## Quick start
 
@@ -37,6 +59,11 @@ make windows
 # Or build for your platform
 go build -o bin/trans-window.exe ./cmd/trans-window
 ```
+
+1. Start the daemon — run `bin\trans-windowd.exe`; its icon appears in the
+   notification area.
+2. Press `ctrl+alt+t` over your terminal: the panel opens.
+3. Write in your language; `ctrl+d` translates and sends.
 
 ### Without an API key
 
@@ -102,6 +129,9 @@ trans-window translate "Hallo Welt"
 # Check a fresh installation: settings file, service, key, paths
 trans-window setup
 ```
+
+The doctor prints one line per check and a fix for whatever is wrong — see
+[docs/setup.md](docs/setup.md).
 
 ### Selection translation
 
@@ -346,10 +376,12 @@ A local translator (`TRANS_COMMAND`) keeps everything on your machine.
 
 ```bash
 make tools    # the linter and the scanner, at the versions CI uses
+make test     # the test suite, as CI runs it
 make qa       # formatting, vet, lint, race tests, vulnerability scan
 make cover    # the same tests with a coverage report, whose last line is the total
 make build    # build for Windows in bin/ (the same flags the release uses)
 make release  # the archives a release ships (see docs/release.md)
+make clean    # the build and coverage artifacts in bin/, dist/ and the root
 ```
 
 `make qa` needs `make tools` once, and `make release` additionally needs `zip`

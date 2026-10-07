@@ -226,12 +226,21 @@ func takeKeyboard(host uintptr) error {
 	// merely came to the front falls behind again the moment it loses the
 	// keyboard, and a panel a person can no longer see is a panel they drag
 	// open to read. Topmost is what stays above the pane it covers whether or
-	// not it is the one being typed into.
+	// not it is the one being typed into. It is claimed again here and once
+	// more after the keyboard is taken, so the window is at the top of that
+	// band whatever another popup was raised in between.
 	call(procSetWindowPos, host, hwndTopMost, 0, 0, 0, 0,
 		swpNoMove|swpNoSize|swpNoActivate)
-	if call(procSetForegroundWindow, host) == 0 {
-		return errors.New("the panel could not take the keyboard")
+	// Bring it to the front and give it the keyboard the reliable way. A
+	// freshly spawned popup is not the foreground process, so a bare
+	// SetForegroundWindow is refused more often than not and the panel is left
+	// open behind the pane it was meant to cover; Activate borrows the thread
+	// that holds the foreground for the moment it takes.
+	if err := Activate(host); err != nil {
+		return err
 	}
+	call(procSetWindowPos, host, hwndTopMost, 0, 0, 0, 0,
+		swpNoMove|swpNoSize|swpNoActivate)
 	return nil
 }
 

@@ -291,18 +291,18 @@ func resizeConsole(columns, rows int) error {
 
 func resizeOnce(handle uintptr, columns, rows int) error {
 	tiny := smallRect{Left: 0, Top: 0, Right: 0, Bottom: 0}
-	if call(procSetConsoleWindowInfo, handle, 1, uintptr(unsafe.Pointer(&tiny))) == 0 {
-		return lastError("SetConsoleWindowInfo")
+	if shaped, why := callWhy(procSetConsoleWindowInfo, handle, 1, uintptr(unsafe.Pointer(&tiny))); shaped == 0 {
+		return lastError("SetConsoleWindowInfo", why)
 	}
 
 	size := coord{X: int16(columns), Y: int16(rows)}
-	if call(procSetConsoleScreenBuffer, handle, uintptr(unsafe.Pointer(&size))) == 0 {
-		return lastError("SetConsoleScreenBufferSize")
+	if shaped, why := callWhy(procSetConsoleScreenBuffer, handle, uintptr(unsafe.Pointer(&size))); shaped == 0 {
+		return lastError("SetConsoleScreenBufferSize", why)
 	}
 
 	full := smallRect{Left: 0, Top: 0, Right: int16(columns - 1), Bottom: int16(rows - 1)}
-	if call(procSetConsoleWindowInfo, handle, 1, uintptr(unsafe.Pointer(&full))) == 0 {
-		return lastError("SetConsoleWindowInfo")
+	if shaped, why := callWhy(procSetConsoleWindowInfo, handle, 1, uintptr(unsafe.Pointer(&full))); shaped == 0 {
+		return lastError("SetConsoleWindowInfo", why)
 	}
 	return nil
 }
@@ -403,14 +403,21 @@ func environmentBlock(values []string) *uint16 {
 	return &block[0]
 }
 
-// commandLineFor quotes what needs quoting, which is everything with a space in
-// it — a program under `Program Files` first of all.
+// commandLineFor quotes what needs quoting: everything with a space, a tab or a
+// quote in it — a program under `Program Files` first of all.
+//
+// The quoting is not "put quotes round it". The line is parsed back by the
+// reader on the other side, where a backslash only means anything before a
+// quote: the ones standing before one are doubled and so is the run at the very
+// end, or the closing quote is read as an escaped one, the argument never ends,
+// and it swallows whatever follows. That rule is the standard library's to
+// keep — it is the same escaping os/exec builds a Windows command line with —
+// so it is used rather than written again here, and the test keeps the shapes
+// that used to break.
 func commandLineFor(program string, arguments []string) string {
 	parts := append([]string{program}, arguments...)
 	for index, part := range parts {
-		if strings.ContainsAny(part, " \t") {
-			parts[index] = `"` + strings.ReplaceAll(part, `"`, `\"`) + `"`
-		}
+		parts[index] = syscall.EscapeArg(part)
 	}
 	return strings.Join(parts, " ")
 }
@@ -420,8 +427,8 @@ func commandLineFor(program string, arguments []string) string {
 // window's at the same time and say which was pressed. The id travels with the
 // key press and no id is claimed twice.
 func RegisterHotkey(id, modifiers, key uint32) error {
-	if call(procRegisterHotKey, 0, uintptr(id), uintptr(modifiers|modNoRepeat), uintptr(key)) == 0 {
-		return lastError("RegisterHotKey")
+	if claimed, why := callWhy(procRegisterHotKey, 0, uintptr(id), uintptr(modifiers|modNoRepeat), uintptr(key)); claimed == 0 {
+		return lastError("RegisterHotKey", why)
 	}
 	return nil
 }
@@ -454,8 +461,8 @@ func ClosePanels() []Window {
 // new one without restarting. The hotkeys belong to the thread that claimed
 // them, so this is called from the loop that waits for them.
 func UnregisterHotkey(id uint32) error {
-	if call(procUnregisterHotKey, 0, uintptr(id)) == 0 {
-		return lastError("UnregisterHotKey")
+	if freed, why := callWhy(procUnregisterHotKey, 0, uintptr(id)); freed == 0 {
+		return lastError("UnregisterHotKey", why)
 	}
 	return nil
 }
@@ -495,6 +502,15 @@ func WaitForCommand() (command Command, id uint32) {
 			return CommandHotkey, uint32(message.WParam)
 		case message.Message == wmReload:
 			return CommandReload, 0
+		default:
+			// Not one of this program's own. Nothing else is waiting on this
+			// thread's queue, so a message kept here would be kept forever:
+			// the tray runs a loop of its own, but a window created on this
+			// thread would have none. Handing it on is harmless when there is
+			// no window to hand it to, which is the usual case, and is the
+			// whole difference when there is one.
+			call(procTranslateMessage, uintptr(unsafe.Pointer(&message)))
+			call(procDispatchMessageW, uintptr(unsafe.Pointer(&message)))
 		}
 	}
 }
@@ -514,8 +530,8 @@ func PostQuit(thread uint32) error {
 }
 
 func postThreadMessage(thread, kind uint32) error {
-	if call(procPostThreadMessage, uintptr(thread), uintptr(kind), 0, 0) == 0 {
-		return lastError("PostThreadMessage")
+	if sent, why := callWhy(procPostThreadMessage, uintptr(thread), uintptr(kind), 0, 0); sent == 0 {
+		return lastError("PostThreadMessage", why)
 	}
 	return nil
 }

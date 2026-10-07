@@ -77,10 +77,17 @@ type Target struct {
 
 // ParseTarget reads a target setting. A handle on its own — `0x1a2b` — names the
 // window exactly; anything else is a title or a pattern to match one by.
+//
+// Only the form Windows prints a handle in is read as one. A title that happens
+// to be all digits — a document numbered `1024`, a window named `0755` — is a
+// title, and reading it as a handle would answer "that window is gone" instead
+// of finding it, which is the one thing this setting is for.
 func ParseTarget(setting string) Target {
 	trimmed := strings.TrimSpace(setting)
-	if handle, err := strconv.ParseUint(trimmed, 0, 64); err == nil && handle != 0 {
-		return Target{Handle: uintptr(handle)}
+	if strings.HasPrefix(strings.ToLower(trimmed), "0x") {
+		if handle, err := strconv.ParseUint(trimmed[2:], 16, 64); err == nil && handle != 0 {
+			return Target{Handle: uintptr(handle)}
+		}
 	}
 	return Target{Pattern: trimmed}
 }

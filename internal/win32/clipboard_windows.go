@@ -50,9 +50,24 @@ func SnapshotClipboard() (ClipboardSnapshot, error) {
 			break
 		}
 		if !handleShaped(id) {
-			if memory, err := copyFormat(id); err == nil {
-				snapshot.formats = append(snapshot.formats, clipboardFormat{id: id, memory: memory})
+			memory, err := copyFormat(id)
+			if errors.Is(err, errFormatGone) {
+				// Another program dropped the format between the walk that
+				// found it and the read of it, so there is nothing of the
+				// author's left to lose.
+				continue
 			}
+			if err != nil {
+				// The format is on the clipboard and cannot be taken away
+				// with the rest, so nothing is written over at all:
+				// EmptyClipboard in Restore would drop it for good, which is
+				// the loss the whole snapshot exists to prevent. Refusing
+				// costs a prompt; writing would cost whatever this holds.
+				snapshot.Release()
+				note(fmt.Sprintf("clipboard format %d could not be copied: %v", id, err))
+				return nil, errors.New("the clipboard holds a format that cannot be copied, so it was not overwritten")
+			}
+			snapshot.formats = append(snapshot.formats, clipboardFormat{id: id, memory: memory})
 			continue
 		}
 		if id != cfBitmap {
@@ -109,8 +124,8 @@ func (snapshot *clipboardSnapshot) Restore() error {
 	put := map[uint32]bool{}
 
 	if snapshot.bitmap != 0 {
-		if call(procSetClipboardData, cfBitmap, snapshot.bitmap) == 0 {
-			return fmt.Errorf("putting the picture back on the clipboard: %w", lastError("SetClipboardData"))
+		if written, why := callWhy(procSetClipboardData, cfBitmap, snapshot.bitmap); written == 0 {
+			return fmt.Errorf("putting the picture back on the clipboard: %w", lastError("SetClipboardData", why))
 		}
 		snapshot.bitmap = 0
 		put[cfBitmap] = true
@@ -122,8 +137,8 @@ func (snapshot *clipboardSnapshot) Restore() error {
 		if put[format.id] {
 			continue
 		}
-		if call(procSetClipboardData, uintptr(format.id), format.memory) == 0 {
-			return fmt.Errorf("putting format %d back on the clipboard: %w", format.id, lastError("SetClipboardData"))
+		if written, why := callWhy(procSetClipboardData, uintptr(format.id), format.memory); written == 0 {
+			return fmt.Errorf("putting format %d back on the clipboard: %w", format.id, lastError("SetClipboardData", why))
 		}
 		put[format.id] = true
 		format.memory = 0
@@ -234,6 +249,13 @@ func (snapshot *clipboardSnapshot) hasFormat(id uint32) bool {
 	return false
 }
 
+// errFormatGone is the one failure of copyFormat that costs nothing: the
+// clipboard dropped the format between the walk that found it and the read of
+// it, so there is nothing of the author's to put back and nothing to refuse
+// over. Every other failure means the format is there and cannot be taken
+// away, which is a different thing entirely.
+var errFormatGone = errors.New("the clipboard no longer holds that format")
+
 // copyFormat makes a private copy of the clipboard's memory for one format. The
 // clipboard's own handle is borrowed and released again: GlobalLock counts its
 // uses, and the block itself still belongs to the clipboard until it is closed.
@@ -247,26 +269,26 @@ func (snapshot *clipboardSnapshot) hasFormat(id uint32) bool {
 func copyFormat(id uint32) (uintptr, error) {
 	handle := call(procGetClipboardData, uintptr(id))
 	if handle == 0 {
-		return 0, errors.New("the clipboard no longer holds that format")
+		return 0, errFormatGone
 	}
 	size := int(call(procGlobalSize, handle))
 	if size <= 0 {
 		return 0, errors.New("the clipboard's data is not memory, so it was left alone")
 	}
-	pointer := call(procGlobalLock, handle)
+	pointer, why := callWhy(procGlobalLock, handle)
 	if pointer == 0 {
-		return 0, lastError("GlobalLock")
+		return 0, lastError("GlobalLock", why)
 	}
 	defer call(procGlobalUnlock, handle)
 
-	memory := call(procGlobalAlloc, gmemMoveable, uintptr(size))
+	memory, why := callWhy(procGlobalAlloc, gmemMoveable, uintptr(size))
 	if memory == 0 {
-		return 0, lastError("GlobalAlloc")
+		return 0, lastError("GlobalAlloc", why)
 	}
-	copied := call(procGlobalLock, memory)
+	copied, why := callWhy(procGlobalLock, memory)
 	if copied == 0 {
 		call(procGlobalFree, memory)
-		return 0, lastError("GlobalLock")
+		return 0, lastError("GlobalLock", why)
 	}
 	copy(locked[byte](copied, size), locked[byte](pointer, size))
 	call(procGlobalUnlock, memory)
@@ -283,9 +305,9 @@ func copyFormat(id uint32) (uintptr, error) {
 // cannot be copied this way is refused, and a clipboard holding one is left
 // untouched rather than emptied.
 func copyBitmap(handle uintptr) (uintptr, error) {
-	copied := call(procCopyImage, handle, imageBitmap, 0, 0, lrCreateDIB)
+	copied, why := callWhy(procCopyImage, handle, imageBitmap, 0, 0, lrCreateDIB)
 	if copied == 0 {
-		return 0, lastError("CopyImage")
+		return 0, lastError("CopyImage", why)
 	}
 	return copied, nil
 }

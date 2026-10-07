@@ -51,6 +51,9 @@ type probe struct {
 	// cancelDuringFocus makes the context done inside the focus wait, which is
 	// where the panel's escape arrives in practice.
 	cancelDuringFocus context.CancelFunc
+	// cancelDuringPaste does the same at the moment the chord goes out, which
+	// is the one cancellation that reaches the paste seam itself.
+	cancelDuringPaste context.CancelFunc
 }
 
 func newProbe() *probe {
@@ -105,9 +108,19 @@ func (p *probe) seams() seams {
 			p.calls = append(p.calls, "pause")
 			return p.pauseErr
 		},
-		paste: func(_ context.Context, chord string) (int, error) {
+		paste: func(ctx context.Context, chord string) (int, error) {
 			p.calls = append(p.calls, "paste")
 			p.pasted = chord
+			// The Windows seam asks the context first, and this one does too:
+			// a delivery cancelled while the chord was going out has to be
+			// answered the way the real one answers it, or the test is of a
+			// cancellation that cannot happen.
+			if p.cancelDuringPaste != nil {
+				p.cancelDuringPaste()
+			}
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
 			if p.pasteErr != nil {
 				return 0, p.pasteErr
 			}
@@ -514,5 +527,32 @@ func TestAPasteWindowsTookNoneOfIsReported(t *testing.T) {
 	}
 	if probe.called("submit") {
 		t.Error("the return key was pressed after a paste that did not happen")
+	}
+}
+
+// A delivery the panel cancelled as the chord went out is not a paste Windows
+// refused. The clipboard is put back below, so the words "the prompt is on the
+// clipboard" would be untrue as well as unhelpful, and an author who pressed
+// escape wants that read back as what they did.
+func TestACancellationAtThePasteSaysItWasCancelled(t *testing.T) {
+	t.Parallel()
+
+	probe := newProbe()
+	ctx, cancel := context.WithCancel(context.Background())
+	probe.cancelDuringPaste = cancel
+
+	err := deliverWith(ctx, seamPointer(probe), 0x1234, "ctrl+v", "a prompt", true)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("the delivery answered %v, want the cancellation", err)
+	}
+	if strings.Contains(err.Error(), "the prompt is on the clipboard") {
+		t.Errorf("a cancelled delivery said %q, want it not to claim the prompt is on the clipboard", err)
+	}
+	if probe.clipboard.restored == 0 {
+		t.Error("the clipboard was not put back after a cancelled delivery")
+	}
+	if probe.called("submit") {
+		t.Errorf("the return was pressed after a cancelled paste: %v", probe.calls)
 	}
 }

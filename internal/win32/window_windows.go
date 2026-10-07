@@ -64,14 +64,26 @@ func call(proc *syscall.LazyProc, args ...uintptr) uintptr {
 	return result
 }
 
-// lastError is the error the last failed call left behind. Not every failure
-// sets one, and an error that says nothing is still worth saying.
-func lastError(proc string) error {
-	err := syscall.GetLastError()
-	if err == nil || errors.Is(err, syscall.Errno(0)) {
+// callWhy runs one Win32 function and returns its result together with the
+// error it left behind, for a caller that has to say why it failed.
+//
+// The error has to come back from the call itself. The last-error word of the
+// thread is consumed by the wrapper that makes the call — a GetLastError asked
+// for afterwards reads zero however the call went, so a failure reported that
+// way once said "was refused" whatever Windows had actually said, including
+// "The parameter is incorrect".
+func callWhy(proc *syscall.LazyProc, args ...uintptr) (uintptr, error) {
+	result, _, why := proc.Call(args...)
+	return result, why
+}
+
+// lastError is why a call failed, in the words Windows left behind. Not every
+// failure sets one, and an error that says nothing is still worth saying.
+func lastError(proc string, from error) error {
+	if from == nil || errors.Is(from, syscall.Errno(0)) {
 		return fmt.Errorf("%s was refused", proc)
 	}
-	return fmt.Errorf("%s failed: %w", proc, err)
+	return fmt.Errorf("%s failed: %w", proc, from)
 }
 
 type message struct {

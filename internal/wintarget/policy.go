@@ -153,6 +153,14 @@ func deliverWith(ctx context.Context, seam *seams, handle uintptr, pasteKeys, te
 
 	sent, err := seam.paste(ctx, pasteKeys)
 	if err != nil {
+		// A delivery the panel cancelled is not a paste Windows refused. The
+		// clipboard goes back below, so saying the prompt is waiting on it
+		// would be untrue as well as unhelpful — and an author who pressed
+		// escape wants that read back as what happened, not as a failure of
+		// the keys.
+		if cancelled := ctx.Err(); cancelled != nil {
+			return cancelled
+		}
 		return pasteFailed(err)
 	}
 	if sent == 0 {

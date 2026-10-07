@@ -95,6 +95,23 @@ func TestATargetSettingThatDoesNotLookLikeAHandleIsATitle(t *testing.T) {
 	}
 }
 
+// A title that happens to be all digits is a title. Handles are written the way
+// Windows prints them — with `0x` in front — and reading `1024` as one would
+// answer "that window is gone" for a document whose name it is.
+func TestATargetSettingOfDigitsAloneIsATitle(t *testing.T) {
+	t.Parallel()
+
+	for _, setting := range []string{"1024", "0755", "0x"} {
+		target := win32.ParseTarget(setting)
+		if target.Handle != 0 {
+			t.Errorf("ParseTarget read %#x out of %q, want the title", target.Handle, setting)
+		}
+		if target.Pattern != setting {
+			t.Errorf("ParseTarget kept %q, want %q", target.Pattern, setting)
+		}
+	}
+}
+
 // A title with a character in it nobody types — the zero-width space a window
 // manager puts between words — is still found by the words that are there.
 func TestATitleWithAnInvisibleCharacterInItIsStillFound(t *testing.T) {

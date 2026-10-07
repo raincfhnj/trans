@@ -58,14 +58,14 @@ func SetClipboardText(text string) error {
 
 	units := append(utf16.Encode([]rune(text)), 0)
 	size := uintptr(len(units) * 2)
-	handle := call(procGlobalAlloc, gmemMoveable, size)
+	handle, why := callWhy(procGlobalAlloc, gmemMoveable, size)
 	if handle == 0 {
-		return lastError("GlobalAlloc")
+		return lastError("GlobalAlloc", why)
 	}
-	pointer := call(procGlobalLock, handle)
+	pointer, why := callWhy(procGlobalLock, handle)
 	if pointer == 0 {
 		call(procGlobalFree, handle)
-		return lastError("GlobalLock")
+		return lastError("GlobalLock", why)
 	}
 	copy(locked[uint16](pointer, len(units)), units)
 	call(procGlobalUnlock, handle)
@@ -73,9 +73,9 @@ func SetClipboardText(text string) error {
 	// The clipboard owns the memory from here on: what SetClipboardData accepts
 	// is never freed by this program. What it refuses stays this program's and
 	// is freed here.
-	if call(procSetClipboardData, cfUnicodeText, handle) == 0 {
+	if written, why := callWhy(procSetClipboardData, cfUnicodeText, handle); written == 0 {
 		call(procGlobalFree, handle)
-		return lastError("SetClipboardData")
+		return lastError("SetClipboardData", why)
 	}
 	return nil
 }
@@ -171,10 +171,24 @@ func Chord(spec string) error {
 	if err != nil {
 		return err
 	}
-	if seen != len(events) {
-		return fmt.Errorf("%s went only partly through: %d of %d key events were taken", spec, seen, len(events))
+	if seen == len(events) {
+		return nil
 	}
-	return nil
+	// Windows took the events in order and stopped somewhere in the middle,
+	// which leaves the ones it took pressed: a Ctrl still down turns every key
+	// the author types next into a shortcut, and a V still down repeats itself
+	// across the window. So the whole chord is let go before this is reported —
+	// a key-up for a key that is not pressed does nothing, and the keys that
+	// did go out stay where they landed either way.
+	release := make([]keyInput, 0, len(held)+1)
+	for _, modifier := range held {
+		release = append(release, keyUp(modifier))
+	}
+	release = append(release, keyUp(uintptr(key)))
+	if _, why := sendKeys(release); why != nil {
+		note("the keys of " + spec + " could not be released: " + why.Error())
+	}
+	return fmt.Errorf("%s went only partly through: %d of %d key events were taken", spec, seen, len(events))
 }
 
 // heldKeys is the set of keys held down for a combination, in the order they
@@ -224,11 +238,11 @@ func Enter() {
 // is left for Windows to fill in, which is what it does for keybd_event's
 // callers too; the virtual key alone is enough for a terminal.
 func keyDown(key uintptr) keyInput {
-	return keyInput{kind: inputKeyboard, key: uint16(key)}
+	return keyInput{key: uint16(key)}
 }
 
 func keyUp(key uintptr) keyInput {
-	return keyInput{kind: inputKeyboard, key: uint16(key), flags: keyEventKeyUp}
+	return keyInput{key: uint16(key), flags: keyEventKeyUp}
 }
 
 // sendKeys hands Windows a run of key events at once and answers how many of
@@ -238,21 +252,21 @@ func keyUp(key uintptr) keyInput {
 func sendKeys(events []keyInput) (int, error) {
 	inputs := make([]input, 0, len(events))
 	for _, event := range events {
-		inputs = append(inputs, input{kind: event.kind, union: inputUnion{keyboard: event}})
+		inputs = append(inputs, input{kind: inputKeyboard, union: inputUnion{keyboard: event}})
 	}
 	if len(inputs) == 0 {
 		return 0, nil
 	}
 
 	size := unsafe.Sizeof(input{})
-	result, _, _ := procSendInput.Call(
+	result, _, why := procSendInput.Call(
 		uintptr(len(inputs)),
 		uintptr(unsafe.Pointer(&inputs[0])),
 		size,
 	)
 	seen := int(result)
 	if seen == 0 {
-		return 0, lastError("SendInput")
+		return 0, lastError("SendInput", why)
 	}
 
 	// Windows has the events now; the pause is the pane's moment to read them

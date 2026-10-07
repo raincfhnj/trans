@@ -52,6 +52,7 @@ var (
 	procSetConsoleScreenBuffer = kernel32.NewProc("SetConsoleScreenBufferSize")
 	procSetConsoleWindowInfo   = kernel32.NewProc("SetConsoleWindowInfo")
 	procSetConsoleTitle        = kernel32.NewProc("SetConsoleTitleW")
+	procGetConsoleScreenBuffer = kernel32.NewProc("GetConsoleScreenBufferInfo")
 	procCloseHandle            = kernel32.NewProc("CloseHandle")
 	procPostThreadMessage      = user32.NewProc("PostThreadMessageW")
 	procPostMessageW           = user32.NewProc("PostMessageW")

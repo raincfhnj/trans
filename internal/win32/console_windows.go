@@ -86,23 +86,50 @@ func OpenOver(options PopupOptions) error {
 // its window to them — and then centres that window over the pane.
 func fitToPane(host uintptr, options PopupOptions, area rect) error {
 	columns, rows := options.Width, options.Height
+	room := workAreaNear(area)
 
-	// A window larger than the pane it is meant to sit on is worth asking smaller
-	// for; how large a cell is in pixels is the host's business, not ours.
-	for attempt := 0; attempt < 3; attempt++ {
+	// The content decides how large the panel is and the screen is the only
+	// thing that ever makes it smaller. Fitting it to the pane it covers  what
+	// this used to do  is what left a panel so small its own interface was cut
+	// off, and a person dragging the window open to read it. A window that
+	// shows fewer cells than the overlay draws is a panel cut off at its edge
+	// whatever drew it, so the window is made to show every one of them; a host
+	// that keeps a frame round the console answers in whole windows, which is
+	// why the size is measured again rather than trusted once.
+	for attempt := 0; attempt < 8; attempt++ {
 		_ = resizeConsole(columns, rows)
 		time.Sleep(40 * time.Millisecond)
 
 		present := windowRect(host)
-		if present.width() <= area.width() && present.height() <= area.height() {
-			break
+		if present.width() <= 0 || present.height() <= 0 {
+			continue
 		}
-		if present.width() > area.width() && present.width() > 0 {
-			columns = max(minColumns, columns*int(area.width())/int(present.width()))
+		shownColumns, shownRows := visibleCells(host, columns, rows)
+
+		// How large the window takes to show every cell the overlay draws: a
+		// ratio from the cells it shows now, capped by the room the screen
+		// gives and never made too small to see.
+		wantWidth := capped(resized(present.width(), int32(shownColumns), int32(columns)),
+			room.width(), minWindowWidth)
+		wantHeight := capped(resized(present.height(), int32(shownRows), int32(rows)),
+			room.height(), minWindowHeight)
+
+		if wantWidth != present.width() || wantHeight != present.height() {
+			call(procSetWindowPos, host, hwndTopMost, 0, 0,
+				uintptr(max(wantWidth, 1)), uintptr(max(wantHeight, 1)),
+				swpNoMove|swpNoActivate)
+			continue
 		}
-		if present.height() > area.height() && present.height() > 0 {
-			rows = max(minRows, rows*int(area.height())/int(present.height()))
+
+		// The window is the size the cells need. When the screen would not hold
+		// the whole panel, the window is the screen's and the overlay draws the
+		// smaller one that fits, rather than one cut off at the edge.
+		if shownColumns != columns || shownRows != rows {
+			columns = max(minColumns, shownColumns)
+			rows = max(minRows, shownRows)
+			continue
 		}
+		break
 	}
 
 	present := windowRect(host)
@@ -114,7 +141,7 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 	// pane it belongs on and kept inside the room the screen gives it, so that
 	// the window is one a person can see and reach whatever the pane turned out
 	// to be.
-	left, top := placedWithin(present.width(), present.height(), area, workAreaNear(area))
+	left, top := placedWithin(present.width(), present.height(), area, room)
 
 	for attempt := 0; attempt < 6; attempt++ {
 		call(procSetWindowPos, host, hwndTopMost,
@@ -126,6 +153,33 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 		time.Sleep(60 * time.Millisecond)
 	}
 	return fmt.Errorf("the window would not stay at %d,%d", left, top)
+}
+
+// consoleScreenBufferInfo is CONSOLE_SCREEN_BUFFER_INFO: how large the buffer
+// is and how much of it the window shows. The widths are the API's, not a
+// choice.
+type consoleScreenBufferInfo struct {
+	Size       coord
+	Cursor     coord
+	Attributes uint16
+	Window     smallRect
+	MaxSize    coord
+}
+
+// visibleCells is how many cells the window drawing this console shows right
+// now. A console that will not say is answered with the size asked for, which
+// is the best guess there is; the window is measured again either way.
+func visibleCells(handle uintptr, fallbackColumns, fallbackRows int) (columns, rows int) {
+	info := consoleScreenBufferInfo{}
+	if call(procGetConsoleScreenBuffer, handle, uintptr(unsafe.Pointer(&info))) == 0 {
+		return fallbackColumns, fallbackRows
+	}
+	columns = int(info.Window.Right - info.Window.Left + 1)
+	rows = int(info.Window.Bottom - info.Window.Top + 1)
+	if columns <= 0 || rows <= 0 {
+		return fallbackColumns, fallbackRows
+	}
+	return columns, rows
 }
 
 // monitorInfo is what GetMonitorInfoW fills in about one screen: the whole of
@@ -168,6 +222,13 @@ func takeKeyboard(host uintptr) error {
 	if host == 0 {
 		return errors.New("the window drawing this console cannot be found")
 	}
+	// Keep the window in the topmost band as well as in front: a popup that
+	// merely came to the front falls behind again the moment it loses the
+	// keyboard, and a panel a person can no longer see is a panel they drag
+	// open to read. Topmost is what stays above the pane it covers whether or
+	// not it is the one being typed into.
+	call(procSetWindowPos, host, hwndTopMost, 0, 0, 0, 0,
+		swpNoMove|swpNoSize|swpNoActivate)
 	if call(procSetForegroundWindow, host) == 0 {
 		return errors.New("the panel could not take the keyboard")
 	}
@@ -198,14 +259,25 @@ func TerminalProgram() string {
 	return ""
 }
 
-// NameConsole gives this console the name the panel looks its window up by.
+// ownTitle is the name this process gave its console. A window is looked up by
+// it, so the three windows of this program each find the one drawing them
+// rather than whichever of them is listed first.
+var ownTitle = PanelTitle
+
+// NameConsole gives this console the name the panel looks its window up by, and
+// remembers it: the window that draws this process answers to that name alone.
 func NameConsole(title string) {
+	ownTitle = title
 	pointer, err := syscall.UTF16PtrFromString(title)
 	if err != nil {
 		return
 	}
 	call(procSetConsoleTitle, uintptr(unsafe.Pointer(pointer)))
 }
+
+// OwnTitle is the name this process's window goes by, which is the one it looks
+// its own window up under.
+func OwnTitle() string { return ownTitle }
 
 // hostWindow is the window that draws this console. A console the console host
 // draws has a window of its own, which is the one to place and the one to take
@@ -218,7 +290,7 @@ func hostWindow() uintptr {
 			return own
 		}
 	}
-	return HostWindow(PanelTitle)
+	return HostWindow(ownTitle)
 }
 
 // HostWindow is the visible window whose title is exactly this, which for a
@@ -584,4 +656,9 @@ const (
 	// pane it opens over is.
 	minColumns = 40
 	minRows    = 8
+
+	// And never into a window too small to read a panel in, whatever the room
+	// the screen turns out to give it.
+	minWindowWidth  = 320
+	minWindowHeight = 160
 )

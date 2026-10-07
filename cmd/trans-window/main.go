@@ -349,7 +349,7 @@ func openOver(options popupOptions, setting string, width, height int, extra ...
 			"-w", "-1",
 			"--pos", fmt.Sprintf("%d,%d", left+panelMargin, top+panelMargin),
 			"--size", fmt.Sprintf("%d,%d", width, height),
-			"new-tab", "--title", win32.PanelTitle,
+			"new-tab", "--title", win32.PopupTitle(options.selection, options.settings),
 			program,
 		}
 		return win32.SpawnQuietly(terminal, append(tab, arguments...), environment)
@@ -439,7 +439,7 @@ func runPopup(arguments []string) error {
 
 	// The window drawing this process is found by the name of its console: with a
 	// terminal program as the default host, that is the only handle on it there is.
-	win32.NameConsole(win32.PanelTitle)
+	win32.NameConsole(win32.PopupTitle(options.selection, options.settings))
 
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -634,7 +634,7 @@ func placeOver(window win32.Window, width, height int) {
 		winlog.Note("panel", "the window could not be placed: %v", err)
 	}
 	targetLeft, targetTop, targetRight, targetBottom := win32.WindowRectOf(window.Handle)
-	left, top, right, bottom := win32.WindowRectOf(win32.HostWindow(win32.PanelTitle))
+	left, top, right, bottom := win32.WindowRectOf(win32.HostWindow(win32.OwnTitle()))
 	screenWidth, screenHeight := win32.ScreenSize()
 	winlog.Note("panel", "target %d,%d-%d,%d window %d,%d-%d,%d screen %dx%d",
 		targetLeft, targetTop, targetRight, targetBottom, left, top, right, bottom,

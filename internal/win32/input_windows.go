@@ -100,7 +100,7 @@ func openClipboardOwner() uintptr {
 	if own := call(procGetConsoleWindow); own != 0 {
 		return own
 	}
-	return HostWindow(PanelTitle)
+	return HostWindow(OwnTitle())
 }
 
 // closeClipboard gives the clipboard back to whoever wants it next.
@@ -141,7 +141,7 @@ func Paste(keys string) error {
 // else drawing the console is a terminal program.
 func DefaultPasteChord() string {
 	own := call(procGetConsoleWindow)
-	if own != 0 && own == HostWindow(PanelTitle) {
+	if own != 0 && own == HostWindow(OwnTitle()) {
 		return "ctrl+v"
 	}
 	return "ctrl+shift+v"

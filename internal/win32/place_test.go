@@ -106,3 +106,60 @@ func TestPinnedKeepsAValueBetweenItsEdges(t *testing.T) {
 		})
 	}
 }
+
+// A window is made large enough for the cells the overlay draws, whatever the
+// host's cell turns out to be in pixels. The answer is a ratio, so a host that
+// draws big cells asks for a big window and one that draws small ones does not.
+func TestResizedScalesTheWindowToTheCellsWanted(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                   string
+		now, cur, want, result int32
+	}{
+		{"a window already showing what is asked is left alone", 800, 100, 100, 800},
+		{"a window showing half the cells doubles", 400, 50, 100, 800},
+		{"a window showing twice the cells halves", 800, 200, 100, 400},
+		{"a host that shows no cells leaves the window as it is", 800, 0, 100, 800},
+		{"a want of nothing leaves the window as it is", 800, 100, 0, 800},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := resized(test.now, test.cur, test.want); got != test.result {
+				t.Errorf("resized(%d, %d, %d) = %d, want %d",
+					test.now, test.cur, test.want, got, test.result)
+			}
+		})
+	}
+}
+
+// The screen is the only thing that makes a panel smaller than the content it
+// draws, and it never makes one so small there is nothing to see.
+func TestCappedKeepsASizeInsideTheRoom(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                       string
+		value, room, floor, result int32
+	}{
+		{"a size inside the room is left alone", 500, 800, 0, 500},
+		{"a size past the room is pulled back to it", 900, 800, 0, 800},
+		{"a size under the floor is lifted to it", 100, 800, 200, 200},
+		{"the floor beats a room too small for it", 100, 50, 200, 200},
+		{"no room is no cap", 900, 0, 0, 900},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := capped(test.value, test.room, test.floor); got != test.result {
+				t.Errorf("capped(%d, %d, %d) = %d, want %d",
+					test.value, test.room, test.floor, got, test.result)
+			}
+		})
+	}
+}

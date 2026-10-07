@@ -51,3 +51,32 @@ func pinned(value, near, far int32) int32 {
 		return value
 	}
 }
+
+// resized is the pixel length a window takes to show want cells where it now
+// shows cur of them. It is a ratio rather than a measured cell: how large a
+// cell is in pixels belongs to whatever draws the window, and a host that keeps
+// a frame round it answers in whole windows. The frame is constant, so the
+// answer runs a little large — never so small that the cells asked for are cut
+// off — and the caller settles it by measuring again.
+//
+// A host that shows no cells at all is left as it is rather than divided by
+// zero: there is nothing to say what a cell is worth yet.
+func resized(now, cur, want int32) int32 {
+	if cur <= 0 || want <= 0 {
+		return now
+	}
+	return now * want / cur
+}
+
+// capped keeps a length inside a room, never below a floor. A window larger
+// than the room cannot be whole in it: the room wins and the caller draws the
+// smaller window that fits, rather than one cut off at the screen's edge.
+func capped(value, room, floor int32) int32 {
+	if room > 0 && value > room {
+		value = room
+	}
+	if value < floor {
+		value = floor
+	}
+	return value
+}

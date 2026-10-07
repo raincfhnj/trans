@@ -141,6 +141,12 @@ func TestOnlyThePanelsOwnWindowsAreThePanels(t *testing.T) {
 	if !win32.IsPanelWindow("trans-panel") {
 		t.Error("the panel's own name was not counted as the panel")
 	}
+	if !win32.IsPanelWindow(win32.SelectTitle) {
+		t.Error("the selection window was not counted as one of this program's")
+	}
+	if !win32.IsPanelWindow(win32.SettingsTitle) {
+		t.Error("the settings window was not counted as one of this program's")
+	}
 
 	for _, title := range []string{
 		"",
@@ -152,5 +158,21 @@ func TestOnlyThePanelsOwnWindowsAreThePanels(t *testing.T) {
 		if win32.IsPanelWindow(title) {
 			t.Errorf("IsPanelWindow(%q) said yes, want only the name as it stands", title)
 		}
+	}
+}
+
+// Each window of this program answers to a name of its own, so that a popup
+// looks up the window drawing it and not whichever of them is listed first.
+func TestEachPopupNamesItsOwnWindow(t *testing.T) {
+	t.Parallel()
+
+	if got := win32.PopupTitle(false, false); got != win32.PanelTitle {
+		t.Errorf("PopupTitle for the panel said %q, want %q", got, win32.PanelTitle)
+	}
+	if got := win32.PopupTitle(true, false); got != win32.SelectTitle {
+		t.Errorf("PopupTitle for the selection said %q, want %q", got, win32.SelectTitle)
+	}
+	if got := win32.PopupTitle(false, true); got != win32.SettingsTitle {
+		t.Errorf("PopupTitle for the settings said %q, want %q", got, win32.SettingsTitle)
 	}
 }

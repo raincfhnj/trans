@@ -2,9 +2,9 @@
 
 [![Go](https://img.shields.io/badge/go-1.26.6-00ADD8?logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![ci](https://github.com/raincfhnj/trans/actions/workflows/ci.yml/badge.svg)](https://github.com/raincfhnj/trans/actions/workflows/ci.yml)
+[![ci](https://github.com/raincfhnj/trans/actions/workflows/ci.yml/badge.svg)](https://github.com/raincfhnj/trans/actions)
 
-Write prompts in the language you think in and get them translated to English for your coding agent. A native Windows translation panel that opens over your terminal window.
+Write prompts in the language you think in and get them translated to English for your coding agent. The panel opens beside the pane you are in — your agent keeps its pane, the panel keeps its own.
 
 ![trans — write in your own language, send to the agent in English](docs/demo.gif)
 
@@ -16,82 +16,43 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 
 ## Features
 
-- **Native Windows panel** — opens over your terminal window, no extra software needed
-- **Selection translation** — select text in the terminal, press a chord, read the translation beside it
+- **Panel beside the agent** — `ctrl+alt+t` splits the terminal pane and opens the panel on the right; `ctrl+d` delivers the English into the pane beside and comes back for the next prompt
+- **Popup instead, if you prefer** — `TRANS_PANEL_HOST=popup` is the floating window over the pane
+- **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API, or a local command; the free ones need no key
+- **Live translation** — the English appears as you write; code in backticks and fences is never sent
 - **Read mode** — English in, your language back, `ctrl+d` copies instead of sending
-- **Settings window** — service, key, panel behaviour and chords, edited in a window summoned the same way
-- **Multiple translation services** — DeepL, Google, MyMemory, any OpenAI-compatible API
-- **No key required** — free services work without any API key
-- **Live translation** — see the English as you write
-- **Vim bindings** — modal editing for the draft box ([docs/vim.md](docs/vim.md))
-- **Draft persistence** — your unfinished prompt is kept between sessions
-- **Code protection** — backticked spans and fenced blocks are not translated
-- **Sent-prompt history** — `ctrl+g` offers the prompts you have already sent
-- **Tray icon** — the daemon's chords, the settings window and start-at-logon from the notification area
+- **Vim bindings**, kept drafts, sent-prompt history (`ctrl+g`), settings window (`ctrl+alt+c`), tray icon
 - **Encrypted key** — the API key is wrapped with Windows DPAPI, never left in the file
 
 ## Installation
 
 ```powershell
-# winget
 winget install raincfhnj.trans
-
-# scoop
+# or
 scoop install trans
 ```
 
-Both manifests live under [packaging/](packaging/) and install from the
-release archives. Until the first `v*` tag is published they resolve to
-nothing — build from source instead:
+Until the first `v*` tag is published both manifests resolve to nothing — build from source:
 
 ```powershell
-make windows   # both programs, written to bin\
+make windows   # both programs into bin\; put it on PATH
 ```
-
-`bin\` only has to be on `PATH` to type `trans-window …` in a shell: the
-programs find each other by sitting in the same directory, so the panel and
-the daemon work without it.
 
 ## Quick start
 
-```bash
-# Build for Windows
-make windows
-
-# Or build for your platform
-go build -o bin/trans-window.exe ./cmd/trans-window
-```
-
-1. Start the daemon — run `bin\trans-windowd.exe`; its icon appears in the
-   notification area.
-2. Press `ctrl+alt+t` over your terminal: the panel opens.
+1. Start the daemon: `bin\trans-windowd.exe` — its icon appears in the notification area.
+2. Over a terminal running anything — a shell, an agent — press `ctrl+alt+t`. The panel opens beside that pane.
 3. Write in your language; `ctrl+d` translates and sends.
 
-### Without an API key
-
-The panel works as a prompt box even without translation. With no key configured, you write in your language and the draft is handed to the agent as-is.
-
-### With translation
-
-Create a config file:
-
-```bash
-# Windows
-%APPDATA%\trans\.env
-
-# Or set environment variables
-TRANS_PROVIDER=gtranslate
-```
-
-For DeepL (free tier available):
+With no API key the panel is a plain draft box: the draft is handed on as you wrote it. To translate, pick a service in `%APPDATA%\trans\.env`:
 
 ```
+TRANS_PROVIDER=gtranslate    # free, no key
+
+# DeepL — a free tier key ends in :fx
 TRANS_API_KEY=your-deepl-key
-```
 
-For any OpenAI-compatible API:
-
-```
+# any OpenAI-compatible API
 TRANS_PROVIDER=openai
 TRANS_API_KEY=sk-...
 TRANS_ENDPOINT=https://api.deepseek.com/v1
@@ -101,131 +62,40 @@ TRANS_MODEL=deepseek-chat
 ## Usage
 
 ```bash
-# Open the panel over the window in front
-trans-window open
-
-# Open in review mode (types without sending)
-trans-window open --review
-
-# Open over a specific window
-trans-window open --target 0x1a2b3c
-
-# Translate what is selected in the window in front
-trans-window select
-
-# Edit the settings in a window of their own
-trans-window settings
-
-# Read English that is already there — nothing is delivered into the window
-trans-window open --read
-
-# The same, starting from the selection in that window
-trans-window open --read --capture
-
-# List available windows
-trans-window list-windows
-
-# Translate text directly (no panel)
-trans-window translate "Hallo Welt"
-
-# Check a fresh installation: settings file, service, key, paths
-trans-window setup
+trans-window open                  # the panel beside the pane in front
+trans-window open --review         # type the prompt in, leave the sending to you
+trans-window open --target 0x1a2b  # deliver into a window of your choosing
+trans-window tui                   # the panel in this terminal itself
+trans-window tui --inline          #   drawn inline, the screen left alone
+trans-window select                # translate what is selected in the window in front
+trans-window open --read           # English in, your language back (ctrl+d copies)
+trans-window open --read --capture #   starting from the selection in that window
+trans-window settings              # the settings window
+trans-window translate "Hallo Welt"  # translate without a panel
+trans-window list-windows          # what can be delivered into, with handles
+trans-window setup                 # the first-run doctor
 ```
 
-The doctor prints one line per check and a fix for whatever is wrong — see
-[docs/setup.md](docs/setup.md).
+The finished prompt goes to the pane the panel was split from; `--target` or
+`TRANS_TARGET` names some other window instead. With no window at all the
+prompt is copied to the clipboard and the panel says so.
 
-### Selection translation
+## In the terminal
 
-Press the selection chord (`ctrl+alt+s` by default) with text selected in the
-pane in front. The selection is read through the clipboard — as it stands by
-default, copied out of the pane first when `TRANS_SELECT_COPY` says which chord
-copies — and a window opens over the pane with the selection and its
-translation together. Nothing is delivered: the text stays where it was
-selected.
+The panel chord — and `trans-window open` — open the panel **beside the pane in
+front**: Windows Terminal splits that pane and the panel runs in the new one on
+the right, whatever is running in the pane it was split from — an agent, a
+shell, an editor. `esc` closes the panel with the pane it drew in.
 
-Where the terminal copies on a chord of its own, say which one:
+`ctrl+d` crosses to the pane beside, pastes the English in and — when it sends —
+comes back to the panel for the next prompt. A prompt that is only typed in
+(`--review`) leaves the keyboard over there, where the last keystroke has to be
+pressed.
 
-```
-TRANS_SELECT_COPY=ctrl+shift+c
-```
-
-The selection is then copied with that chord — the whole clipboard kept to one
-side first, chord pressed, selection read, clipboard put back — instead of read
-as it stands. Kept whole is the point: a screenshot or a set of files on the
-clipboard is copied back too, and when something on it cannot be copied back the
-capture refuses rather than writing over it. A selection longer than 4000
-characters is cut before it is sent.
-
-### Read mode
-
-The other half of the panel: text that is already in English — an agent's
-reply, an error, a log line — comes back in your own language, and nothing is
-delivered into the window it was found in. `ctrl+d` (or `alt+enter`) copies the
-result to the clipboard instead of sending it, `esc` closes, and the header
-says `read · service → ZH`.
-
-- `trans-window open --read` starts from the clipboard.
-- `trans-window open --read --capture` starts from the selection in the target
-  window: clipboard saved, window brought forward, `TRANS_CAPTURE_KEYS`
-  pressed, selection read, clipboard put back. If the capture finds nothing,
-  the clipboard is used and the panel says so.
-
-`TRANS_READ_LANGUAGE` (default `ZH`) is the language results come back in —
-reading has a language of its own, so it never moves what prompts are
-translated into. Nothing read is kept: no draft is saved, no confirmation is
-asked. See [docs/read-mode.md](docs/read-mode.md).
-
-### Windows daemon
-
-`trans-windowd` waits for three chords and opens whichever window they name:
-
-| Chord | Default | Opens |
-| --- | --- | --- |
-| `TRANS_HOTKEY` | `ctrl+alt+t` | The panel |
-| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | The selection window |
-| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | The settings window |
-
-```bash
-# Start the daemon with a panel chord of your own
-TRANS_HOTKEY=ctrl+shift+t trans-windowd
-```
-
-Each chord is claimed when the daemon starts — and claimed again whenever the
-tray's *Reload settings* is chosen, so a chord changed in the settings window
-takes effect without a restart. Set a chord to `off` to leave it unclaimed. On
-layouts where `ctrl+alt` types a character (AltGr on many of them), move the
-chords to `ctrl+shift` before starting.
-
-### The tray icon
-
-Right-click the icon in the notification area:
-
-| Item | What it does |
-| --- | --- |
-| Open panel | The same as pressing the panel chord |
-| Close panel | Asks every panel window to close |
-| Settings… | The settings window |
-| Reload settings | Reads the settings again and claims the chords anew |
-| Start at logon | Writes or removes the `HKCU\...\Run` entry for this program |
-| Quit | Gives the chords back and ends the daemon |
-
-`TRANS_TRAY=0` starts no tray at all; the chords work exactly as they did, and
-the only way to end the program is to end the process. A tray that cannot be
-drawn is logged and otherwise ignored. See [docs/tray.md](docs/tray.md).
-
-### Where the API key lives
-
-`TRANS_KEYS=dpapi` (the default) wraps the provider key with the Windows Data
-Protection API and keeps it in `secrets.json` beside the settings, so another
-account on the machine cannot read it. The first time the panel or the daemon
-starts after that, a plaintext key in `.env` is moved: the file is backed up to
-`.env.bak.<timestamp>`, the key is wrapped, and only then is the line taken out
-— so a failure at any point leaves the key recoverable. `TRANS_KEYS=plain`
-leaves the key in the file, untouched.
-
-See [docs/keys.md](docs/keys.md) for the order the move happens in and where
-the files sit.
+`trans-window tui` typed by hand is the panel in the terminal it is typed into.
+On a terminal that is not a Windows Terminal the chord types `trans-window tui`
+into a prompt instead, and a pane with a program of its own in it is left alone
+rather than written into.
 
 ## Key bindings
 
@@ -267,159 +137,54 @@ the files sit.
 
 ## Settings
 
-Every setting can be a line in the `.env` file or an environment variable, but
-`TRANS_CONFIG_DIR` is the environment's alone: the file is only found once the
-directory that holds it is known, so a line inside the file cannot move it.
+Every setting is a line in the `.env` file or an environment variable; the
+environment wins. The most used:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `TRANS_API_KEY` | none | Credentials for the translation service |
-| `TRANS_PROVIDER` | auto | Which service: `deepl`, `google`, `gtranslate`, `openai`, `mymemory`, `cmd`, `dry-run`, `off` |
-| `TRANS_MODEL` | service default | Model name for OpenAI-compatible APIs |
-| `TRANS_PASTE_KEYS` | automatic | Paste chord for the panel; unset, `ctrl+v` or `ctrl+shift+v` is picked by the window being pasted into |
-| `TRANS_COMMAND` | none | Local translation command |
+| `TRANS_PROVIDER` | auto | Service: `deepl`, `google`, `gtranslate`, `openai`, `mymemory`, `cmd`, `dry-run`, `off` |
+| `TRANS_API_KEY` | none | Credentials for the service (or `TRANS_<PROVIDER>_API_KEY`) |
 | `TRANS_LANGUAGE` | `EN-US` | Target language |
-| `TRANS_ENDPOINT` | service default | Override service endpoint |
+| `TRANS_PANEL_HOST` | `terminal` | `popup` opens the panel as a window of its own instead |
 | `TRANS_SUBMIT` | `1` | `0` types without sending |
-| `TRANS_VIM` | `0` | `1` enables vim bindings |
 | `TRANS_LIVE` | `1` | `0` translates only on send |
-| `TRANS_CONFIRM` | `0` | `1` shows English before sending |
-| `TRANS_KEEP_DRAFT` | `1` | `0` starts with empty box |
-| `TRANS_THEME` | auto | Colour scheme: `auto` follows the terminal; `ocean`, `forest`, `amber`, `mono` are built in |
-| `TRANS_DRAFT_ROWS` | `6` | Rows the draft box asks the terminal for, from `4` to `16` |
-| `TRANS_PANEL_WIDTH` | `110` | Columns the panel popup asks for, from `60` to `180` |
-| `TRANS_MAX_DRAFT` | `2000` | Characters before warning |
-| `TRANS_PULSE` | `1` | `0` stops the live circle animation |
-| `TRANS_LOGO` | `1` | `0` hides the draft box signature |
-| `TRANS_HOTKEY` | `ctrl+alt+t` | Chord that opens the panel (`off` opens nothing) |
-| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | Chord that opens the selection window |
-| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | Chord that opens the settings window |
-| `TRANS_SELECT_COPY` | none | Chord pressed to copy the selection; without one the clipboard is read as it stands |
-| `TRANS_READ_LANGUAGE` | `ZH` | Language read-mode results come back in |
-| `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | Chord `--capture` presses to copy the selection |
-| `TRANS_HISTORY` | `1` | `0` keeps no record of sent prompts |
-| `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
-| `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file |
+| `TRANS_VIM` | `0` | `1` enables vim bindings |
+| `TRANS_THEME` | auto | Colour scheme: `ocean`, `forest`, `amber`, `mono` |
+| `TRANS_TARGET` | none | Window the prompt is delivered into: a handle or a title |
+| `TRANS_COMMAND` | none | A local program to translate with instead of a service |
+| `TRANS_HOTKEY` | `ctrl+alt+t` | Panel chord (`off` opens nothing) |
+| `TRANS_SELECT_HOTKEY` | `ctrl+alt+s` | Selection window chord |
+| `TRANS_CONFIG_HOTKEY` | `ctrl+alt+c` | Settings window chord |
 | `TRANS_TRAY` | `1` | `0` starts the daemon without a tray icon |
-| `TRANS_CONFIG_DIR` | `%APPDATA%\trans` | Where the `.env` and the secrets live; environment only, never the `.env` itself |
-| `TRANS_STATE_DIR` | `%LOCALAPPDATA%\trans\state` | Where the kept drafts and the record are written |
 
-### The settings window
+The full list — layout, chords, history, key storage, directories — is in
+[docs/settings.md](docs/settings.md), which the settings window edits for you.
 
-`trans-window settings` — or the settings chord — opens the settings the window
-offers over the pane in front:
+## More
 
-- Values are changed with `←` `→` or written in with `enter`, and `s` saves.
-- Stepping the theme row repaints the settings window as it goes — a live
-  preview; the panel and the selection window take it up the next time they
-  open.
-- What is saved goes into the `.env` in the config directory; every other line
-  stays as it stands.
-- A variable set in the environment wins over the file, so those rows carry an
-  `env` mark: saving them does not change what they answer until it is taken
-  out of the environment.
-- Saving one of the three chords writes a notice that the daemon has to claim
-  them again — it says to restart `trans-windowd`, and the tray's *Reload
-  settings* does the same in place.
-- The API key is shown as dots and never written out in the window.
-
-Not every setting is in the window: `TRANS_MAX_DRAFT`, `TRANS_PULSE`,
-`TRANS_LOGO`, `TRANS_HISTORY`, `TRANS_HISTORY_LIMIT`, `TRANS_READ_LANGUAGE`,
-`TRANS_CAPTURE_KEYS`, `TRANS_KEYS`, `TRANS_TRAY`, `TRANS_CONFIG_DIR` and
-`TRANS_STATE_DIR` are written in the `.env` or set in the environment.
-`TRANS_TARGET` is the window the panel opens over when nothing is named in
-front of it, and is read by the panel rather than edited anywhere.
-
-See [docs/settings.md](docs/settings.md) for what every setting does and how to
-use it.
-
-### Services that need no key
-
-```
-TRANS_PROVIDER=gtranslate
-```
-
-- **`gtranslate`** — Google's public translate endpoint. Undocumented and can be rate limited.
-- **`mymemory`** — Fallback with a smaller daily allowance.
-
-## Local translation
-
-Point the panel at a program instead of a service:
-
-```bash
-TRANS_COMMAND=/path/to/translateLocally -m de-en-base
-```
-
-The draft is written to stdin, the translation read from stdout. No key, no network.
-
-See [docs/local-translation.md](docs/local-translation.md) for details.
-
-## Sent-prompt history
-
-Every prompt that reached the agent is written down — what you wrote, what was
-sent, which window it went into — and `ctrl+g` opens the record, newest first.
-`enter` puts the selected prompt back into the box exactly as it was written,
-`delete` drops one, `esc` closes. The record holds `TRANS_HISTORY_LIMIT`
-prompts (500 by default), drops the oldest beyond that, and stays on your
-machine in the state directory (`%LOCALAPPDATA%\trans\state`). It is created
-for you alone — owner-only access where the filesystem keeps access bits,
-which Windows does not, and there the directory's own permissions are what
-keep it yours.
-
-See [docs/history.md](docs/history.md) for the details.
-
-## Live translation and what it costs
-
-`ctrl+l` translates the draft as you write it, in a second box beside it. The
-draft is split into sentences and each sentence is translated once and
-remembered — with the sentence in front of it, which is what the service is
-told about its meaning — so writing a fourth sentence does not pay for the
-first three again. That memory lives in the running panel and nowhere else:
-nothing you write is written down for it, and closing the panel forgets it.
-
-See [docs/live-translation.md](docs/live-translation.md) for the details.
-
-## What leaves your machine
-
-The draft goes to the translation service. Code in backticks and fenced blocks is held back and never sent. The API key goes to the translation service only.
-
-A local translator (`TRANS_COMMAND`) keeps everything on your machine.
+- **Selection translation** — press `ctrl+alt+s` with text selected: the selection and its translation are drawn together and nothing is delivered. Terminals that copy on a chord of their own say which one in `TRANS_SELECT_COPY`.
+- **Read mode** — `open --read` turns the panel around; see [docs/read-mode.md](docs/read-mode.md).
+- **The tray** — open panel, settings, reload, start at logon; see [docs/tray.md](docs/tray.md).
+- **The API key** — wrapped with DPAPI by default, or kept plain; see [docs/keys.md](docs/keys.md).
+- **Local translation** — `TRANS_COMMAND=/path/to/translateLocally -m de-en-base`: draft to stdin, translation from stdout, nothing leaves the machine ([docs/local-translation.md](docs/local-translation.md)).
+- **History** — what you wrote, what was sent, which window it went into; `ctrl+g` opens the record ([docs/history.md](docs/history.md)).
+- **What leaves your machine** — the draft goes to the translation service, code in backticks and fenced blocks never does, and the key goes to the service only. A local translator keeps everything at home.
 
 ## Development
 
 ```bash
 make tools     # the linters and the scanner, at the versions CI uses
 make test      # the test suite, as CI runs it
-make qa        # formatting, workflow lint, vet, lint, race tests, vulnerability scan
-make lint-web  # oxlint over any JavaScript or TypeScript in the tree
-make cover     # the same tests with a coverage report, whose last line is the total
-make build     # build for Windows in bin/ (the same flags the release uses)
-make release   # the archives a release ships (see docs/release.md)
-make clean     # the build and coverage artifacts in bin/, dist/ and the root
+make qa        # fmt, workflow lint, vet, lint, race, vuln
+make cover     # the tests with a coverage report
+make build     # build for Windows in bin/
+make release   # the archives a release ships (docs/release.md)
 ```
 
-`make qa` needs `make tools` once, and `make release` additionally needs `zip`
-and `sha256sum`, so it runs in a POSIX shell (Linux, macOS, WSL, Git Bash).
-Everything else runs wherever Go does.
-
-Continuous integration runs the same gate on every push and pull request
-(`.github/workflows/ci.yml`) — formatting, `actionlint` over the workflows
-themselves (with `shellcheck` over their shell blocks), vet, a lint pass for
-each of linux and windows, a cross-build for both Windows architectures, the
-race suite with a coverage floor of 60%, and `govulncheck` — plus a check that
-the packaging manifests still name the archives a release builds. A second job
-builds and tests the tree on Windows itself, where the Windows-only files are
-at home and the tests that need a desktop can run; a third job runs `oxlint`
-over any JavaScript or TypeScript in the tree, whenever such files are added.
-A pull request additionally gets the dependency review, which reads what the
-change brings in rather than only what the tree holds. Pushing a `v*` tag
-builds and publishes the release archives (`.github/workflows/release.yml`),
-whose file names are the contract the [scoop](packaging/scoop/trans.json) and
-[winget](packaging/winget/) manifests under `packaging/` are written against
-([packaging/README.md](packaging/README.md)).
-
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit
-together and [docs/release.md](docs/release.md) for cutting a release.
+`make qa` needs `make tools` once; `make release` additionally needs `zip` and
+`sha256sum` in a POSIX shell. CI runs the same gate on every push and pull
+request. See [docs/architecture.md](docs/architecture.md) for how the pieces
+fit together.
 
 ## Credits
 

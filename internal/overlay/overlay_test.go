@@ -937,12 +937,14 @@ func TestARestoredDraftSaysThatItWasResumed(t *testing.T) {
 	}, teatest.WithDuration(frameTimeout))
 
 	// A draft that came back opens at its beginning, so that is where writing
-	// carries on, and the header stops calling it resumed.
+	// carries on, and the header stops calling it resumed the moment it is
+	// written in. Everything drawn from the first frame that shows the writing
+	// is therefore clear of the word: a tail of the output would hold the end
+	// of one frame, and the box and the badge are at the top of it.
 	overlayUnderTest.Type("!")
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
-		tail := out[max(0, len(out)-400):]
-		return bytes.Contains(tail, []byte("!Bitte behebe den Test")) &&
-			!bytes.Contains(tail, []byte("resumed"))
+		at := bytes.Index(out, []byte("!Bitte behebe den Test"))
+		return at >= 0 && !bytes.Contains(out[at:], []byte("resumed"))
 	}, teatest.WithDuration(frameTimeout))
 
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -962,11 +964,14 @@ func TestADraftCanBeThrownAwayWithOneKey(t *testing.T) {
 	overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyCtrlU})
 	overlayUnderTest.Type("Etwas Neues")
 
-	// What is written after the throw-away is in the box. The old draft being
-	// gone is what the store is asked below; asking the rendered tail for the
-	// absence of the old words would be asking how much was redrawn.
+	// What is written after the throw-away is in the box: the words are typed
+	// only after the old draft is gone, so finding them anywhere in what was
+	// drawn is finding them after it. The tail of the output is no place to
+	// look: a redrawn frame is thousands of bytes and the box sits at the top
+	// of it, so the words land outside any fixed tail whenever the renderer
+	// paints the frame whole rather than the line that changed.
 	teatest.WaitFor(t, overlayUnderTest.Output(), func(out []byte) bool {
-		return bytes.Contains(out[max(0, len(out)-500):], []byte("Etwas Neues"))
+		return bytes.Contains(out, []byte("Etwas Neues"))
 	}, teatest.WithDuration(frameTimeout))
 
 	if drafts.cleared != 1 {

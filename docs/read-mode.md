@@ -11,8 +11,8 @@ trans-window open --read --capture     # start from the selection in that window
 trans-window open --read --target "Windows Terminal"   # positioned like `open`
 ```
 
-Both invocations are what a hotkey should press. `--read` resolves the window
-exactly like `open` does (so the panel lands over the right pane), takes the
+Each of these invocations is what a hotkey should press. `--read` resolves the
+window exactly like `open` does (so the panel lands over the right pane), takes the
 draft's place as the source text, and turns the panel around.
 
 ## What is different in read mode

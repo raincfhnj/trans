@@ -10,18 +10,20 @@ name another window.
 The popup itself is a second process, started as `trans-window popup` with the
 window it draws named on its own command line — `--selection` and `--settings`
 for the two smaller windows, nothing for the panel, and `--read`, `--capture`,
-`--review` or `--probe` for what was asked of it. Switches travel there rather
-than in the environment because a command line can be checked and refused
-before anything is drawn, and because the process that reads it is the only one
-that can be sure who wrote it. What rides in the environment instead is what is
+`--review`, `--send` or `--probe` for what was asked of it. Switches travel
+there rather than in the environment because a command line can be checked and
+refused before anything is drawn, and because the process that reads it is the
+only one that can be sure who wrote it. What rides in the environment instead is
+what is
 a setting or a piece of text rather than a switch: the pane to open over, which
 the parent resolved while it was still the window in front, and the selection
 one of the windows was opened for.
 
 The panel is the draft box: on `alt+enter` the draft goes to a translation
 service and the result is handed back to the same window through `wintarget`:
-the text is put on the clipboard, the window is brought forward and pasted
-into, and return is pressed to send it. The review action stops before the
+the window is brought forward and waited for, the text is put on the clipboard,
+the paste chord presses it in, and — once the pane has had its moment to read
+it — return is sent to hand it over. The review action stops before the
 return, leaving that keystroke to you.
 
 The selection window only reads. The process the chord woke takes the
@@ -51,7 +53,7 @@ every other line alone. Neither of them delivers anything.
 | `frame` | What the three windows share: the palette, the boxes with their labels, the wrapped rows, and the scroll bar. The overlay had drawn its own copies of these before, which is how the two drifted. |
 | `vimarea` | A text area with modal editing, used by the overlay. |
 | `config` | Settings from the environment and the `.env` in the config directory — read by `Load`, prepared and kept by `Prepare`, and rewritten line by line by `Save`. |
-| `draft`, `history`, `atomicfile` | An unfinished prompt on disk, one file per window; the record of prompts already delivered; and the one write both of them — and the settings file — go through: a fresh file for its owner alone, moved into place so nothing is ever read half-written. |
+| `draft`, `history`, `atomicfile` | An unfinished prompt on disk, one file per window; the record of prompts already delivered; and the write the draft and the settings file go through: a fresh file for its owner alone, moved into place so nothing is ever read half-written. The record appends to its own file as prompts go out, and only takes that rewrite when the oldest are trimmed. |
 | `win32`, `wintarget`, `winlog` | The same windows on Windows: the chords the daemon claims, the selection read out of the pane, the window each popup opens over, the paste that delivers a prompt into it, and the log a program without a console has to write to. Each waits on a signal where Windows offers one — the clipboard sequence number, the window in front, the target's input queue — and only falls back to a named delay where none exists. |
 | `httpapi` | The one HTTP transport the five services share: timeouts, response caps, a redirect guard that keeps a key from leaving https, retry with backoff and `Retry-After`, and the error kinds `translation.Trouble` turns into sentences. |
 | `secrets` | The provider key at rest, wrapped with Windows DPAPI, in a file of its own beside the `.env`; `config.UpgradeSecrets` moves a plaintext key into it and `ResolveKey` reads it back for whoever asked. |
@@ -73,11 +75,12 @@ how the popup was opened.
 
 `promptflow` owns the ports it needs — `Translator`, `Target`, `UsageReporter` —
 and imports no adapter package, not even `translation`. Where the two
-vocabularies have to meet, they meet in the composition root: it is the only
+vocabularies have to meet, they meet in `internal/service`: it is the only
 place that knows both a `translation.Usage` and a `promptflow.Usage` exist, and
-it adapts one to the other. `promptflow.New` assumes the dependencies it is
-handed are real; a composition root is its only caller, and a nil would fail on
-the first keystroke.
+it adapts one to the other, so `cmd/trans-window` asks it for a
+`promptflow.UsageReporter` and never sees both itself. `promptflow.New`
+assumes the dependencies it is handed are real; a composition root is its only
+caller, and a nil would fail on the first keystroke.
 
 Previews and sends use different translators. A send is one shot and goes to the
 service directly; a preview goes through the sentence cache, because writing
@@ -113,12 +116,15 @@ type ContextualTranslator interface {
 }
 ```
 
-`translation.Options` is a superset — `APIKey`, `TargetLanguage`, `Endpoint` —
-and each service takes what applies. That holds while services want the same
-three things. The moment one needs something private to it, a project id or a
-region, that parsing belongs in the composition root rather than in a struct
-every service has to look at: adding fields there makes every provider carry
-what one of them needed.
+`translation.Options` is a superset — `APIKey`, `TargetLanguage`, `Endpoint`,
+and the two wider ones, `Model` for a service that is a model rather than a
+translator and `Command` for one that is a program on the machine — and each
+service takes what applies and ignores the rest. Every field there is one more
+than the providers that do not need it carry, which is the price of keeping
+the interface itself at `New(Options)`. Something narrower still — a project
+id, a region — is better parsed in the composition root and handed to the one
+service that asked for it, rather than added to a struct every service has to
+look at.
 
 Add a package that implements `Provider`, register it in `Registry()` in
 `internal/service/service.go`, and it becomes selectable through

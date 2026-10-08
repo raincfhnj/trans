@@ -1,9 +1,10 @@
 # The settings
 
 Every setting is a line in the `.env` file in the config directory or an
-environment variable. The settings window is the friendly way to edit most of
-them; the rest are written into `.env` by hand. This page says what each one
-does and how to use it.
+environment variable — except `TRANS_CONFIG_DIR`, which the environment alone
+decides, the file being only found once its directory is known. The settings
+window is the friendly way to edit most of them; the rest are written into
+`.env` by hand. This page says what each one does and how to use it.
 
 ## Opening the settings window
 
@@ -31,8 +32,9 @@ that file stays as it stands. A variable set in the environment wins over the
 file, so those rows carry an `env` mark: saving them does not change what they
 answer until the variable is taken out of the environment.
 
-Saving one of the three chords says the daemon has to claim them again — the
-tray's *Reload settings* does it in place, or restart `trans-windowd`.
+Saving one of the three chords writes a notice that the daemon has to claim
+them again — it says to restart `trans-windowd`, and the tray's *Reload
+settings* does the same in place.
 
 The API key is shown as dots and never written out in the window.
 
@@ -88,6 +90,8 @@ environment.
 | `TRANS_CAPTURE_KEYS` | `ctrl+shift+c` | The chord `open --read --capture` presses to copy the selection. |
 | `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file instead of wrapping it with the Windows Data Protection API. |
 | `TRANS_TRAY` | `1` | `0` starts the daemon with no tray icon. |
+| `TRANS_CONFIG_DIR` | `%APPDATA%\trans` | Where the `.env` and `secrets.json` live. Environment only — the file is found *through* this directory, so a line inside it cannot move it. |
+| `TRANS_STATE_DIR` | `%LOCALAPPDATA%\trans\state` | Where an unfinished draft and the record of sent prompts are kept between sessions. |
 | `TRANS_TARGET` | none | The window the panel opens over when nothing is named in front of it: a handle (`0x1a2b`) or a title. Read by the panel rather than edited anywhere. |
 
 ## Where the settings live

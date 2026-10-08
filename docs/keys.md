@@ -42,8 +42,9 @@ environment wins over the file at the next load anyway.
 
 ## Reading it back
 
-Loading the settings fills the key in from the protected store when the file
-carries none, so the services see the same thing either way — the code that
+Loading the settings reads what the file and the environment carry;
+`config.ResolveKey` then fills the key in from the protected store when neither
+has one, so the services see the same thing either way — the code that
 talks to DeepL or an OpenAI-compatible endpoint never knows which mode is in
 force.
 

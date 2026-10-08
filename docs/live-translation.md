@@ -42,10 +42,14 @@ that does not exist.
 
 So code is taken out of the draft before it is sent. Every backticked span and
 every fenced block — including one still being typed, which has no closing fence
-yet — is replaced by a marker like `⟦0⟧`, and put back verbatim afterwards. The
-service sees a whole sentence with one token where the code was, so the grammar
-around it survives; the code itself never travels, which costs nothing and keeps
-it off the network.
+yet — is replaced by a marker like `⟦a1b2c3-0⟧`: brackets, a nonce drawn fresh
+for this translation, and the span's number. The service sees a whole sentence
+with one token where the code was, so the grammar around it survives; the code
+itself never travels, which costs nothing and keeps it off the network, and it
+is put back verbatim afterwards. The nonce is what keeps a draft that itself
+contains something shaped like a marker from being taken for one of ours on the
+way back: it was written before that nonce existed, so nothing in it can carry
+it.
 
 Markers are checked on the way back. If a service drops one or repeats it, the
 translation is refused rather than delivered with a hole in it, because a prompt

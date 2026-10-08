@@ -37,7 +37,7 @@ Side effect: your sentence and its English sit side by side, prompt after prompt
 winget install raincfhnj.trans
 
 # scoop
-scoop install raincfhnj.trans
+scoop install trans
 ```
 
 Both manifests live under [packaging/](packaging/) and install from the
@@ -267,14 +267,16 @@ the files sit.
 
 ## Settings
 
-Every setting can be a line in the `.env` file or an environment variable.
+Every setting can be a line in the `.env` file or an environment variable, but
+`TRANS_CONFIG_DIR` is the environment's alone: the file is only found once the
+directory that holds it is known, so a line inside the file cannot move it.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `TRANS_API_KEY` | none | Credentials for the translation service |
 | `TRANS_PROVIDER` | auto | Which service: `deepl`, `google`, `gtranslate`, `openai`, `mymemory`, `cmd`, `dry-run`, `off` |
 | `TRANS_MODEL` | service default | Model name for OpenAI-compatible APIs |
-| `TRANS_PASTE_KEYS` | auto | Paste chord for the panel (`ctrl+v`, `ctrl+shift+v`) |
+| `TRANS_PASTE_KEYS` | automatic | Paste chord for the panel; unset, `ctrl+v` or `ctrl+shift+v` is picked by the window being pasted into |
 | `TRANS_COMMAND` | none | Local translation command |
 | `TRANS_LANGUAGE` | `EN-US` | Target language |
 | `TRANS_ENDPOINT` | service default | Override service endpoint |
@@ -296,6 +298,8 @@ Every setting can be a line in the `.env` file or an environment variable.
 | `TRANS_HISTORY_LIMIT` | `500` | Prompts kept before the oldest are dropped |
 | `TRANS_KEYS` | `dpapi` | `plain` leaves the API key in the `.env` file |
 | `TRANS_TRAY` | `1` | `0` starts the daemon without a tray icon |
+| `TRANS_CONFIG_DIR` | `%APPDATA%\trans` | Where the `.env` and the secrets live; environment only, never the `.env` itself |
+| `TRANS_STATE_DIR` | `%LOCALAPPDATA%\trans\state` | Where the kept drafts and the record are written |
 
 ### The settings window
 
@@ -308,16 +312,17 @@ offers over the pane in front:
 - A variable set in the environment wins over the file, so those rows carry an
   `env` mark: saving them does not change what they answer until it is taken
   out of the environment.
-- Saving one of the three chords says the daemon has to claim them again — the
-  tray's *Reload settings* does it in place, or restart `trans-windowd`.
+- Saving one of the three chords writes a notice that the daemon has to claim
+  them again — it says to restart `trans-windowd`, and the tray's *Reload
+  settings* does the same in place.
 - The API key is shown as dots and never written out in the window.
 
 Not every setting is in the window: `TRANS_MAX_DRAFT`, `TRANS_PULSE`,
 `TRANS_LOGO`, `TRANS_HISTORY`, `TRANS_HISTORY_LIMIT`, `TRANS_READ_LANGUAGE`,
-`TRANS_CAPTURE_KEYS`, `TRANS_KEYS` and `TRANS_TRAY` are written in the `.env`
-or set in the environment. `TRANS_TARGET` is the window the panel opens over
-when nothing is named in front of it, and is read by the panel rather than
-edited anywhere.
+`TRANS_CAPTURE_KEYS`, `TRANS_KEYS`, `TRANS_TRAY`, `TRANS_CONFIG_DIR` and
+`TRANS_STATE_DIR` are written in the `.env` or set in the environment.
+`TRANS_TARGET` is the window the panel opens over when nothing is named in
+front of it, and is read by the panel rather than edited anywhere.
 
 See [docs/settings.md](docs/settings.md) for what every setting does and how to
 use it.
@@ -396,12 +401,12 @@ Continuous integration runs the same gate on every push and pull request
 themselves (with `shellcheck` over their shell blocks), vet, a lint pass for
 each of linux and windows, a cross-build for both Windows architectures, the
 race suite with a coverage floor of 60%, and `govulncheck` — plus a check that
-the packaging manifests still name the archives a release builds. A pull
-request additionally gets the dependency review, which reads what the change
-brings in rather than only what the tree holds. The JavaScript and TypeScript
-gate (`oxlint`, configured in `.oxlintrc.json`) runs whenever such files are
-added. The Windows-only files are compiled and linted by that second pass,
-which is where the tests on this platform cannot look. Pushing a `v*` tag
+the packaging manifests still name the archives a release builds. A second job
+builds and tests the tree on Windows itself, where the Windows-only files are
+at home and the tests that need a desktop can run; a third job runs `oxlint`
+over any JavaScript or TypeScript in the tree, whenever such files are added.
+A pull request additionally gets the dependency review, which reads what the
+change brings in rather than only what the tree holds. Pushing a `v*` tag
 builds and publishes the release archives (`.github/workflows/release.yml`),
 whose file names are the contract the [scoop](packaging/scoop/trans.json) and
 [winget](packaging/winget/) manifests under `packaging/` are written against

@@ -1,23 +1,25 @@
-# Setup wizard and doctor
+# Setup doctor
 
-`trans-window setup` is the first-run wizard's read-only half: it walks the
-things a working installation needs and says what it found. Every line is a
-verdict, the check, and — when something is not right — what to do about it.
+`trans-window setup` walks the things a working installation needs and says
+what it found. Every line is a verdict, the check, and — when something is not
+right — what to do about it. Everything it reports it only reads: no network,
+no writes beyond the first settings file `config.Prepare` makes, so it is safe
+to run whenever something looks wrong.
 
 ```console
 $ trans-window setup
-PASS  go toolchain: C:\go\bin\go.exe
-PASS  settings: C:\Users\you\AppData\Roaming\trans\.env (412 bytes)
-PASS  provider key: gtranslate is chosen and needs no key
-WARN  programs on PATH: neither trans-window.exe nor trans-windowd.exe is on PATH
+PASS go toolchain: C:\go\bin\go.exe
+PASS settings: C:\Users\you\AppData\Roaming\trans\.env (412 bytes)
+PASS provider key: gtranslate is chosen and needs no key
+WARN programs on PATH: neither trans-window.exe nor trans-windowd.exe is on PATH
      fix: run `make windows` and add bin\ to PATH, or call the programs by full path
-PASS  speech synthesis: default voice "Microsoft Zira Desktop" is available via Windows SAPI
+PASS speech synthesis: default voice "Microsoft Zira Desktop" is available via Windows SAPI
 
-3 passed, 1 warnings, 0 failures
+4 passed, 1 warnings, 0 failures
 ```
 
-`trans-window setup doctor` says the same thing — `setup` is the wizard,
-`setup doctor` is the name for what it does when you come back to it later.
+`trans-window setup doctor` says the same thing: `doctor` is the explicit name
+for what `setup` already does, for the person coming back to it later.
 
 ## Machine-readable output
 
@@ -79,10 +81,10 @@ asked.
 
 ## The Go toolchain, when it matters
 
-The doctor runs `go version` only to report it. A prebuilt installation never
-needs a compiler, so its absence is a warning rather than a failure — the fix
-is there for the person who wants to build `trans` from source, and silent for
-everyone else.
+The doctor only asks PATH where `go` is — the same lookup `os/exec` makes — and
+reports the path it found. A prebuilt installation never needs a compiler, so
+its absence is a warning rather than a failure — the fix is there for the
+person who wants to build `trans` from source, and silent for everyone else.
 
 ## How it is put together
 

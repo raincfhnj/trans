@@ -5,6 +5,7 @@ package win32
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -113,7 +114,7 @@ func openClipboardOwned(allowOwner bool) bool {
 	if allowOwner {
 		owner = openClipboardOwner()
 	}
-	for attempt := 0; attempt < 10; attempt++ {
+	for range 10 {
 		if call(procOpenClipboard, owner) != 0 {
 			return true
 		}
@@ -163,8 +164,8 @@ func Chord(spec string) error {
 		events = append(events, keyDown(modifier))
 	}
 	events = append(events, keyDown(uintptr(key)), keyUp(uintptr(key)))
-	for index := len(held) - 1; index >= 0; index-- {
-		events = append(events, keyUp(held[index]))
+	for _, h := range slices.Backward(held) {
+		events = append(events, keyUp(h))
 	}
 
 	seen, err := sendKeys(events)

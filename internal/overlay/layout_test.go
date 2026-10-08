@@ -158,8 +158,8 @@ func TestTheBarIsAColumn(t *testing.T) {
 	columns := map[int]int{}
 	for _, line := range lines {
 		for _, mark := range []string{overlay.ScrollThumb, overlay.ScrollTrack} {
-			if at := strings.Index(line, mark); at >= 0 {
-				columns[lipgloss.Width(line[:at])]++
+			if before, _, ok := strings.Cut(line, mark); ok {
+				columns[lipgloss.Width(before)]++
 			}
 		}
 	}

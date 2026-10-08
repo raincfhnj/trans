@@ -9,7 +9,12 @@ GOBIN  := $(shell go env GOPATH)/bin
 WIN_EXE := -trimpath -ldflags "-s -w"
 WIN_GUI := -trimpath -ldflags "-s -w -H windowsgui"
 
-.PHONY: all build windows test race cover fmt fmt-check lint vet vuln qa clean tools
+# The JavaScript and TypeScript gate, pinned the way the Go tools in `tools`
+# are pinned: oxlint comes from npm rather than `go install`, so its version
+# is written down once here, and CI reaches it through `make lint-web`.
+OXLINT := oxlint@1.87.0
+
+.PHONY: all build windows test race cover fmt fmt-check lint lint-actions lint-web vet vuln qa clean tools
 
 all: qa build
 
@@ -63,16 +68,36 @@ lint:
 vet:
 	go run ./tools/vet
 
+# The workflows and their `run:` blocks are code too: actionlint reads a
+# workflow the way golangci-lint reads the Go, and where shellcheck is on the
+# machine it reads every `run:` block as a shell script as well — so a mistake
+# in a step is found before the step ever runs. Installed by `tools` at the
+# version CI runs it at, so this gate and the workflow's are one gate.
+lint-actions:
+	$(GOBIN)/actionlint
+
+# The tree holds no JavaScript or TypeScript today; this is the gate that
+# starts working the moment it does, and while it does not the gate says so
+# rather than going red over a linter with nothing to read. The list is made
+# of make's own `$(shell)` and `$(filter)`, so the gate keeps its condition
+# out of the recipe and runs under cmd.exe as well as under a POSIX shell.
+# CI runs this same target through `make lint-web`.
+WEB_SOURCES = $(filter %.js %.jsx %.mjs %.cjs %.ts %.tsx,$(shell git ls-files))
+
+lint-web:
+	@$(if $(strip $(WEB_SOURCES)),npx --yes $(OXLINT),echo "no JavaScript or TypeScript to lint")
+
 vuln:
 	$(GOBIN)/govulncheck ./...
 
-qa: fmt-check vet lint race vuln
+qa: fmt-check lint-actions vet lint race vuln
 
 # The exact linter and scanner CI runs, so `make qa` and the workflow are the
 # same gate rather than two that drift: a version bump happens here and in
 # .github/workflows/ci.yml in one change.
 tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+	go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 	go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
 clean:

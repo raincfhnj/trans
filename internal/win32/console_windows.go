@@ -59,7 +59,7 @@ func OpenOver(options PopupOptions) error {
 	}
 
 	var trouble error
-	for attempt := 0; attempt < 15; attempt++ {
+	for range 15 {
 		host := hostWindow()
 		if host == 0 {
 			trouble = errors.New("the window drawing this console cannot be found")
@@ -96,7 +96,7 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 	// whatever drew it, so the window is made to show every one of them; a host
 	// that keeps a frame round the console answers in whole windows, which is
 	// why the size is measured again rather than trusted once.
-	for attempt := 0; attempt < 8; attempt++ {
+	for range 8 {
 		_ = resizeConsole(columns, rows)
 		time.Sleep(40 * time.Millisecond)
 
@@ -143,7 +143,7 @@ func fitToPane(host uintptr, options PopupOptions, area rect) error {
 	// to be.
 	left, top := placedWithin(present.width(), present.height(), area, room)
 
-	for attempt := 0; attempt < 6; attempt++ {
+	for range 6 {
 		call(procSetWindowPos, host, hwndTopMost,
 			uintptr(left), uintptr(top), 0, 0,
 			swpNoSize|swpNoActivate|swpShowWindow)
@@ -361,7 +361,7 @@ func resizeConsole(columns, rows int) error {
 	}
 
 	var trouble error
-	for attempt := 0; attempt < 10; attempt++ {
+	for range 10 {
 		if trouble = resizeOnce(handle, columns, rows); trouble == nil {
 			return nil
 		}
@@ -625,7 +625,7 @@ func postThreadMessage(thread, kind uint32) error {
 // the key press goes to whatever has the keyboard, which is not what a setting
 // asking to be told about it meant.
 func Keys(spec string) (modifiers, key uint32, err error) {
-	for _, part := range strings.Split(strings.ToLower(spec), "+") {
+	for part := range strings.SplitSeq(strings.ToLower(spec), "+") {
 		switch strings.TrimSpace(part) {
 		case "ctrl", "control":
 			modifiers |= modControl

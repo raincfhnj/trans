@@ -95,7 +95,7 @@ func closeWindow(t *testing.T, model *teatest.TestModel) {
 }
 
 func stepDown(model *teatest.TestModel, rows int) {
-	for index := 0; index < rows; index++ {
+	for range rows {
 		model.Send(tea.KeyMsg{Type: tea.KeyDown})
 	}
 }

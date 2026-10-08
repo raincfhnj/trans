@@ -267,9 +267,9 @@ func open(subcommand string) error {
 // the daemon decides about a chord is exactly what it says about one.
 var (
 	complain = func(format string, arguments ...any) {
-		winlog.Note("windowd", "trouble: "+format, arguments...)
+		winlog.Notef("windowd", "trouble: "+format, arguments...)
 	}
 	note = func(format string, arguments ...any) {
-		winlog.Note("windowd", format, arguments...)
+		winlog.Notef("windowd", format, arguments...)
 	}
 )

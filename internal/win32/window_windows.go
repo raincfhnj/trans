@@ -306,7 +306,7 @@ func Activate(handle uintptr) error {
 
 	// Windows can refuse, and typing into whatever is in front instead would put
 	// the prompt in the wrong place; so this is asked rather than assumed.
-	for attempt := 0; attempt < 20; attempt++ {
+	for range 20 {
 		if call(procGetForegroundWindow) == handle {
 			return nil
 		}

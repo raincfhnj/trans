@@ -77,7 +77,7 @@ func TestTheBarTellsWhereTheViewSits(t *testing.T) {
 	if !strings.Contains(shown, frame.ScrollTrack) {
 		t.Error("only the thumb was drawn, want the track under it")
 	}
-	for _, row := range strings.Split(shown, "\n") {
+	for row := range strings.SplitSeq(shown, "\n") {
 		if want := 30 + 1 + lipgloss.Width(frame.ScrollThumb); lipgloss.Width(row) != want {
 			t.Errorf("the row is %d cells, want the text padded to %d with the bar as its column: %q",
 				lipgloss.Width(row), want, row)

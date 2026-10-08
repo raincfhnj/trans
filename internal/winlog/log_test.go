@@ -31,7 +31,7 @@ func cacheDirectory(t *testing.T) string {
 func TestANoteIsWrittenWhereItCanBeFoundAgain(t *testing.T) {
 	directory := cacheDirectory(t)
 
-	Note("trans-window", "the clipboard holds %s, which cannot be put back", "a picture")
+	Notef("trans-window", "the clipboard holds %s, which cannot be put back", "a picture")
 
 	path := filepath.Join(directory, "trans", "trans-window.log")
 	written, err := os.ReadFile(path)
@@ -55,8 +55,8 @@ func TestANoteIsWrittenWhereItCanBeFoundAgain(t *testing.T) {
 func TestASecondNoteIsAppendedToTheFirst(t *testing.T) {
 	directory := cacheDirectory(t)
 
-	Note("trans-window", "the first thing")
-	Note("trans-window", "the second thing")
+	Notef("trans-window", "the first thing")
+	Notef("trans-window", "the second thing")
 
 	written, err := os.ReadFile(filepath.Join(directory, "trans", "trans-window.log"))
 	if err != nil {
@@ -76,8 +76,8 @@ func TestASecondNoteIsAppendedToTheFirst(t *testing.T) {
 func TestEachProgramWritesItsOwnFile(t *testing.T) {
 	directory := cacheDirectory(t)
 
-	Note("trans-window", "from the panel")
-	Note("trans-windowd", "from the daemon")
+	Notef("trans-window", "from the panel")
+	Notef("trans-windowd", "from the daemon")
 
 	wanted := map[string]string{
 		"trans-window":  "from the panel",
@@ -119,10 +119,10 @@ func TestANoteThatCannotBeWrittenIsNotFatal(t *testing.T) {
 
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			t.Fatalf("Note panicked on a log it could not write: %v", recovered)
+			t.Fatalf("Notef panicked on a log it could not write: %v", recovered)
 		}
 	}()
-	Note("trans-window", "this has nowhere to go")
+	Notef("trans-window", "this has nowhere to go")
 }
 
 // A note is formatted the way fmt formats one, and a caller that passes no
@@ -130,7 +130,7 @@ func TestANoteThatCannotBeWrittenIsNotFatal(t *testing.T) {
 func TestANoteWithNoArgumentsIsWrittenAsItStands(t *testing.T) {
 	directory := cacheDirectory(t)
 
-	Note("trans-window", "100%% of the prompt arrived")
+	Notef("trans-window", "100%% of the prompt arrived")
 
 	written, err := os.ReadFile(filepath.Join(directory, "trans", "trans-window.log"))
 	if err != nil {

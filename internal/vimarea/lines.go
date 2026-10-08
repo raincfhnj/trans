@@ -121,9 +121,10 @@ func (m *Model) pasteLines(where placement, count int) {
 		row++
 	}
 
-	var pasted []string
+	pieces := strings.Split(m.register.text, "\n")
+	pasted := make([]string, 0, max(count, 1)*len(pieces))
 	for range max(count, 1) {
-		pasted = append(pasted, strings.Split(m.register.text, "\n")...)
+		pasted = append(pasted, pieces...)
 	}
 
 	lines = append(lines[:row], append(pasted, lines[row:]...)...)

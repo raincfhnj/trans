@@ -98,7 +98,7 @@ func TestTheOverlayNeverSetsABackground(t *testing.T) {
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 87, Height: 17})
 
 	for _, sequence := range sgrSequences(model.View()) {
-		for _, parameter := range strings.Split(sequence, ";") {
+		for parameter := range strings.SplitSeq(sequence, ";") {
 			if setsBackground(parameter) {
 				t.Errorf("a style sets background %q, in \x1b[%sm", parameter, sequence)
 			}
@@ -199,7 +199,7 @@ func TestTheHeadingNeverOutgrowsThePane(t *testing.T) {
 	model, _ = model.Update(tea.WindowSizeMsg{Width: paneWidth, Height: 17})
 	model, _ = model.Update(overlay.UsageSeen(promptflow.Usage{Used: 999_900, Limit: 1_000_000}))
 
-	heading := strings.Split(model.View(), "\n")[0]
+	heading, _, _ := strings.Cut(model.View(), "\n")
 	if width := lipgloss.Width(heading); width > paneWidth-1 {
 		t.Errorf("the heading is %d columns in a pane of %d: %q", width, paneWidth, heading)
 	}
@@ -225,7 +225,7 @@ func TestTheHeadingKeepsItsWidthWhenSettingsChange(t *testing.T) {
 			})
 			model, _ = model.Update(tea.WindowSizeMsg{Width: 87, Height: 17})
 
-			heading := strings.Split(model.View(), "\n")[0]
+			heading, _, _ := strings.Cut(model.View(), "\n")
 			widths[fmt.Sprintf("live=%v review=%v", live, review)] = lipgloss.Width(heading)
 		}
 	}

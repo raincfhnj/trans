@@ -30,7 +30,7 @@ var (
 // for a moment is normal, a session with no desktop never opens it at all.
 func skipWithoutAClipboard(t *testing.T) {
 	t.Helper()
-	for attempt := 0; attempt < 10; attempt++ {
+	for range 10 {
 		if open, _, _ := procOpenClipboard.Call(0); open != 0 {
 			_, _, _ = procCloseClipboard.Call()
 			return

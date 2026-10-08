@@ -194,6 +194,7 @@ func (m Model) insert(key tea.KeyMsg, msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	before, row, col := m.area.Value(), m.Row(), m.Column()
+	wrapped := m.RowOffset()
 
 	var cmd tea.Cmd
 	m.area, cmd = m.area.Update(msg)
@@ -205,7 +206,14 @@ func (m Model) insert(key tea.KeyMsg, msg tea.Msg) (Model, tea.Cmd) {
 	}
 	m.recordTyped(key)
 	m.desiredCol = m.Column()
-	m.reveal()
+
+	// The view follows the cursor, so it is the cursor's place in the wrapped
+	// rows that says whether it can have moved: a key that leaves it where it
+	// was needs no scroll, and the render that would say so — thrown away in
+	// reveal — is the most expensive part of a key.
+	if m.Row() != row || m.RowOffset() != wrapped {
+		m.reveal()
+	}
 	return m, cmd
 }
 

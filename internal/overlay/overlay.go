@@ -454,8 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.revision != m.revision || m.stage == translating {
 			return m, nil
 		}
-		started, cmd := m.startPreview()
-		breathing := started.(Model)
+		breathing, cmd := m.startPreview()
 		return breathing, tea.Batch(cmd, breathing.beginPulse())
 
 	case previewReadyMsg:
@@ -821,8 +820,7 @@ func (m Model) translateNow() (tea.Model, tea.Cmd) {
 	m.previewError = nil
 	m.refit()
 	m.revision++
-	started, cmd := m.startPreview()
-	translating := started.(Model)
+	translating, cmd := m.startPreview()
 	if translating.confirmWait != 0 {
 		translating.confirmWait = translating.requested
 	}
@@ -860,7 +858,7 @@ func (m Model) schedulePreview() tea.Cmd {
 	})
 }
 
-func (m Model) startPreview() (tea.Model, tea.Cmd) {
+func (m Model) startPreview() (Model, tea.Cmd) {
 	draft := m.draft.Value()
 	m.requested++
 	request := m.requested
@@ -881,8 +879,7 @@ func (m Model) startPreview() (tea.Model, tea.Cmd) {
 // translateForConfirmation reuses the preview machinery, so the finished text
 // arrives as a reply and the confirmation shows it.
 func (m Model) translateForConfirmation() (tea.Model, tea.Cmd) {
-	model, cmd := m.startPreview()
-	confirming := model.(Model)
+	confirming, cmd := m.startPreview()
 	confirming.stage = translating
 	// The stage waits for exactly this request; while confirmWait says so, a
 	// cancelled reply for it lets go of the wait instead of stranding it.

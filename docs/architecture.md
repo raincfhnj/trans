@@ -144,7 +144,7 @@ the ports.
 ## Working on it
 
 ```bash
-make qa     # formatting, linting, race tests, vulnerability scan
+make qa     # formatting, workflow lint, vet, lint, race tests, vulnerability scan
 make build
 ```
 

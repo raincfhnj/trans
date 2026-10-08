@@ -2,6 +2,7 @@ package win32
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -47,12 +48,7 @@ func PopupTitle(selection, settings bool) string {
 // merely begins with one is a document of the author's — `trans-panel.md` open
 // in an editor — and closing one of those is not what "close the panel" means.
 func IsPanelWindow(title string) bool {
-	for _, name := range popupTitles {
-		if title == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(popupTitles, title)
 }
 
 // Find picks the window a target setting names. The title as written is looked

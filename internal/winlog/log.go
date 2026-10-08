@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// Note appends one line to this program's log, next to the kept drafts. A log
+// Notef appends one line to this program's log, next to the kept drafts. A log
 // that cannot be written is not worth failing over: nothing depends on it.
-func Note(program, format string, arguments ...any) {
+func Notef(program, format string, arguments ...any) {
 	directory, err := os.UserCacheDir()
 	if err != nil {
 		return

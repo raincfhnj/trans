@@ -323,7 +323,7 @@ func copyBitmap(handle uintptr) (uintptr, error) {
 // Win32 FFI and not something this code can be written around; the invariant
 // above is what makes it safe.
 func locked[T any](address uintptr, count int) []T {
-	return unsafe.Slice((*T)(unsafe.Pointer(address)), count) //nolint:gosec,govet // the address belongs to the clipboard
+	return unsafe.Slice((*T)(unsafe.Pointer(address)), count) //nolint:govet // the address belongs to the clipboard
 }
 
 // The clipboard formats this package copies by hand, and the flags its calls

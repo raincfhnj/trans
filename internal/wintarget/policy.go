@@ -208,5 +208,5 @@ func pasteFailed(err error) error {
 // happens — the panel is told by the error the caller answers — so this is for
 // whoever reads the log afterwards.
 func note(what string) {
-	winlog.Note("trans-window", "%s", what)
+	winlog.Notef("trans-window", "%s", what)
 }

@@ -171,5 +171,5 @@ func Pause(ctx context.Context, howLong time.Duration) error {
 // There is nobody to tell at the moment it happens — the caller is told by the
 // error or by the empty answer — so this is for whoever reads the log later.
 func note(what string) {
-	winlog.Note("trans-window", "%s", what)
+	winlog.Notef("trans-window", "%s", what)
 }

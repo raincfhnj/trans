@@ -32,6 +32,7 @@ type reply struct {
 // times it was asked and what arrived.
 type service struct {
 	*httptest.Server
+
 	asked []string
 }
 

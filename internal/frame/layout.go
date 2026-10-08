@@ -34,15 +34,20 @@ func Scrolled(palette *Styles, contentWidth int, body string, first, visible, to
 		top = min((first*room+scrollable/2)/scrollable, room)
 	}
 
+	// The two marks are the same for every row, so they are coloured once
+	// rather than once per row: a bar of ten rows is not ten colours. The
+	// width is asked of the row as it stands, single line and ANSI included,
+	// where lipgloss.Width would split it apart to find that out.
+	track, thumb := palette.Mark.Render(ScrollTrack), palette.Accent.Render(ScrollThumb)
 	for index, row := range lines {
 		// The thumb is read, the track only tells it where it can go.
-		mark := palette.Mark.Render(ScrollTrack)
+		mark := track
 		if index >= top && index < top+height {
-			mark = palette.Accent.Render(ScrollThumb)
+			mark = thumb
 		}
 		// Padded first: a bar is a column, not something that follows the text.
 		lines[index] = row + strings.Repeat(" ",
-			max(contentWidth-lipgloss.Width(row), 0)) + " " + mark
+			max(contentWidth-ansi.StringWidth(row), 0)) + " " + mark
 	}
 	return strings.Join(lines, "\n")
 }
@@ -55,7 +60,7 @@ func Spread(left, right string, line int) string {
 		return CutTo(left, line)
 	}
 
-	gap := line - lipgloss.Width(left) - lipgloss.Width(right)
+	gap := line - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 1 {
 		// Too narrow for both, and the keys on the left are worth more.
 		return CutTo(left, line)
@@ -85,10 +90,11 @@ func RowsOf(text string, width int) int {
 	if text == "" {
 		return 1
 	}
+	// Counting the breaks keeps the rows without building the slice of them.
 	if width < 1 {
-		return len(strings.Split(text, "\n"))
+		return strings.Count(text, "\n") + 1
 	}
-	return len(strings.Split(Wrapped(text, width), "\n"))
+	return strings.Count(Wrapped(text, width), "\n") + 1
 }
 
 // Wrapped is the text broken for a box of that width.

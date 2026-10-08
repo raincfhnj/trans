@@ -10,6 +10,7 @@ import (
 	"trans/internal/vimarea"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m Model) View() string {
@@ -280,7 +281,7 @@ func (m Model) footer(line int) string {
 func roomBeside(mode string, inner int) int {
 	room := inner - 1
 	if mode != "" {
-		room -= lipgloss.Width(mode) + 1
+		room -= ansi.StringWidth(mode) + 1
 	}
 	return room
 }
@@ -329,24 +330,32 @@ func (m Model) keyHints(room int) string {
 
 	// A pane too narrow for every key shows the ones it has room for. Half a key
 	// name is worth less than none.
+	//
+	// The room is measured on the plain words: the styles colour a hint
+	// without padding it, so what a hint draws is as wide as what it says.
+	// Measuring before drawing also means a hint the line has no room for is
+	// never drawn at all, and the line itself is written once into a builder
+	// rather than copied anew for every hint appended to it.
 	separator := m.styles.hint.Render(" · ")
-	line, width := "", 0
+	separatorWidth := ansi.StringWidth(separator)
+	var line strings.Builder
+	width := 0
 	for _, hint := range shown {
-		drawn := m.styles.key.Render(hint[0]) + m.styles.hint.Render(" "+hint[1])
-		needed := lipgloss.Width(drawn)
-		if line != "" {
-			needed += lipgloss.Width(separator)
+		needed := ansi.StringWidth(hint[0]) + 1 + ansi.StringWidth(hint[1])
+		if width > 0 {
+			needed += separatorWidth
 		}
 		if width+needed > room {
 			break
 		}
-		if line != "" {
-			line += separator
+		if width > 0 {
+			line.WriteString(separator)
 		}
-		line += drawn
+		line.WriteString(m.styles.key.Render(hint[0]))
+		line.WriteString(m.styles.hint.Render(" " + hint[1]))
 		width += needed
 	}
-	return line
+	return line.String()
 }
 
 // The keys are few enough here to name them all, and the last one is the way out.

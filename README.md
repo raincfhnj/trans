@@ -377,13 +377,14 @@ A local translator (`TRANS_COMMAND`) keeps everything on your machine.
 ## Development
 
 ```bash
-make tools    # the linter and the scanner, at the versions CI uses
-make test     # the test suite, as CI runs it
-make qa       # formatting, vet, lint, race tests, vulnerability scan
-make cover    # the same tests with a coverage report, whose last line is the total
-make build    # build for Windows in bin/ (the same flags the release uses)
-make release  # the archives a release ships (see docs/release.md)
-make clean    # the build and coverage artifacts in bin/, dist/ and the root
+make tools     # the linters and the scanner, at the versions CI uses
+make test      # the test suite, as CI runs it
+make qa        # formatting, workflow lint, vet, lint, race tests, vulnerability scan
+make lint-web  # oxlint over any JavaScript or TypeScript in the tree
+make cover     # the same tests with a coverage report, whose last line is the total
+make build     # build for Windows in bin/ (the same flags the release uses)
+make release   # the archives a release ships (see docs/release.md)
+make clean     # the build and coverage artifacts in bin/, dist/ and the root
 ```
 
 `make qa` needs `make tools` once, and `make release` additionally needs `zip`
@@ -391,15 +392,19 @@ and `sha256sum`, so it runs in a POSIX shell (Linux, macOS, WSL, Git Bash).
 Everything else runs wherever Go does.
 
 Continuous integration runs the same gate on every push and pull request
-(`.github/workflows/ci.yml`) — formatting, vet, a lint pass for each of linux
-and windows, a cross-build for both Windows architectures, the race suite with
-a coverage floor of 60%, and `govulncheck` — plus a check that the packaging
-manifests still name the archives a release builds. The Windows-only files are
-compiled and linted by that second pass, which is where the tests on this
-platform cannot look. Pushing a `v*` tag builds and publishes the release
-archives (`.github/workflows/release.yml`), whose file names are the contract
-the [scoop](packaging/scoop/trans.json) and [winget](packaging/winget/)
-manifests under `packaging/` are written against
+(`.github/workflows/ci.yml`) — formatting, `actionlint` over the workflows
+themselves (with `shellcheck` over their shell blocks), vet, a lint pass for
+each of linux and windows, a cross-build for both Windows architectures, the
+race suite with a coverage floor of 60%, and `govulncheck` — plus a check that
+the packaging manifests still name the archives a release builds. A pull
+request additionally gets the dependency review, which reads what the change
+brings in rather than only what the tree holds. The JavaScript and TypeScript
+gate (`oxlint`, configured in `.oxlintrc.json`) runs whenever such files are
+added. The Windows-only files are compiled and linted by that second pass,
+which is where the tests on this platform cannot look. Pushing a `v*` tag
+builds and publishes the release archives (`.github/workflows/release.yml`),
+whose file names are the contract the [scoop](packaging/scoop/trans.json) and
+[winget](packaging/winget/) manifests under `packaging/` are written against
 ([packaging/README.md](packaging/README.md)).
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"trans/internal/atomicfile"
@@ -106,8 +107,8 @@ func (l Log) Entries() ([]Entry, error) {
 		return nil, err
 	}
 	newestFirst := make([]Entry, 0, len(kept))
-	for index := len(kept) - 1; index >= 0; index-- {
-		newestFirst = append(newestFirst, kept[index])
+	for _, k := range slices.Backward(kept) {
+		newestFirst = append(newestFirst, k)
 	}
 	return newestFirst, nil
 }

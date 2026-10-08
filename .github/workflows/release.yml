@@ -22,6 +22,10 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # A release build that hangs should fail the job rather than sit on a
+    # runner until the platform reclaims it: two architectures, two archives,
+    # and a checksum file is a couple of minutes of work.
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:

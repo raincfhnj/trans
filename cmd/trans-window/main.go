@@ -51,7 +51,7 @@ import (
 )
 
 func main() {
-	winlog.Note("panel", "started with %q, target %q", os.Args, os.Getenv("TRANS_TARGET"))
+	winlog.Notef("panel", "started with %q, target %q", os.Args, os.Getenv("TRANS_TARGET"))
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -89,7 +89,7 @@ func exit(err error) {
 	if err == nil {
 		return
 	}
-	winlog.Note("panel", "gave up: %v", err)
+	winlog.Notef("panel", "gave up: %v", err)
 	fmt.Fprintln(os.Stderr, "trans-window:", err)
 	os.Exit(1)
 }
@@ -345,13 +345,14 @@ func openOver(options popupOptions, setting string, width, height int, extra ...
 	// still settling — which is what leaves it drawing onto an empty one.
 	if terminal := win32.TerminalProgram(); terminal != "" {
 		left, top, _, _ := win32.WindowRectOf(window.Handle)
-		tab := []string{
+		tab := make([]string, 0, 10+len(arguments))
+		tab = append(tab,
 			"-w", "-1",
 			"--pos", fmt.Sprintf("%d,%d", left+panelMargin, top+panelMargin),
 			"--size", fmt.Sprintf("%d,%d", width, height),
 			"new-tab", "--title", win32.PopupTitle(options.selection, options.settings),
 			program,
-		}
+		)
 		return win32.SpawnQuietly(terminal, append(tab, arguments...), environment)
 	}
 	return win32.Spawn(program, arguments, environment)
@@ -417,10 +418,10 @@ func runSettings(arguments []string) error {
 // the protected store, or in neither.
 func protectKey(cfg *config.Settings) {
 	if note := config.UpgradeSecrets(cfg); note != "" {
-		winlog.Note("window", "%s", note)
+		winlog.Notef("window", "%s", note)
 	}
 	if note := config.ResolveKey(cfg); note != "" {
-		winlog.Note("window", "%s", note)
+		winlog.Notef("window", "%s", note)
 	}
 }
 
@@ -443,7 +444,7 @@ func runPopup(arguments []string) error {
 
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
-		winlog.Note("panel", "settings: %v", err)
+		winlog.Notef("panel", "settings: %v", err)
 		return err
 	}
 	// Every window of this program asks a service the same question of the same
@@ -460,7 +461,7 @@ func runPopup(arguments []string) error {
 			// where they can beats not opening at all because the pane named
 			// for them could not be found. The pane in front is where they go
 			// then, which is where the chord was pressed.
-			winlog.Note("panel", "target %q: %v", cfg.Target, resolveErr)
+			winlog.Notef("panel", "target %q: %v", cfg.Target, resolveErr)
 			window = win32.FrontPane()
 		}
 		if options.selection {
@@ -469,7 +470,7 @@ func runPopup(arguments []string) error {
 		return settingsWindow(window, &cfg)
 	}
 	if resolveErr != nil {
-		winlog.Note("panel", "target %q: %v", cfg.Target, resolveErr)
+		winlog.Notef("panel", "target %q: %v", cfg.Target, resolveErr)
 		return resolveErr
 	}
 	return runPanel(&cfg, window, options)
@@ -499,7 +500,7 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 	// the keys.
 	prefill, prefillTrouble := panelPrefill(cfg, window, options)
 
-	winlog.Note("panel", "opening over %#x %q, service %s, paste %s",
+	winlog.Notef("panel", "opening over %#x %q, service %s, paste %s",
 		window.Handle, window.Title, chosen.Name, pasteKeys)
 	placeOver(window, overlay.PopupWidth, overlay.PopupHeight())
 
@@ -559,7 +560,7 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 			fmt.Fprintln(os.Stderr, "trans-window:", err)
 		}
 	}
-	winlog.Note("panel", "closed: %v", err)
+	winlog.Notef("panel", "closed: %v", err)
 	// A window that was closed ends the program this way; it is not a failure.
 	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return fmt.Errorf("running the panel: %w", err)
@@ -577,7 +578,7 @@ func panelPrefill(cfg *config.Settings, window win32.Window, options popupOption
 	}
 
 	source, trouble := readSource(systemPorts, window.Handle, options.capture, cfg.CaptureKeys)
-	winlog.Note("panel", "read mode: %d characters of source, trouble %v", len(source), trouble)
+	winlog.Notef("panel", "read mode: %d characters of source, trouble %v", len(source), trouble)
 	return source, trouble
 }
 
@@ -631,12 +632,12 @@ func placeOver(window win32.Window, width, height int) {
 		Width:  width,
 		Height: height,
 	}); err != nil {
-		winlog.Note("panel", "the window could not be placed: %v", err)
+		winlog.Notef("panel", "the window could not be placed: %v", err)
 	}
 	targetLeft, targetTop, targetRight, targetBottom := win32.WindowRectOf(window.Handle)
 	left, top, right, bottom := win32.WindowRectOf(win32.HostWindow(win32.OwnTitle()))
 	screenWidth, screenHeight := win32.ScreenSize()
-	winlog.Note("panel", "target %d,%d-%d,%d window %d,%d-%d,%d screen %dx%d",
+	winlog.Notef("panel", "target %d,%d-%d,%d window %d,%d-%d,%d screen %dx%d",
 		targetLeft, targetTop, targetRight, targetBottom, left, top, right, bottom,
 		screenWidth, screenHeight)
 }

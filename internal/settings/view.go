@@ -11,7 +11,7 @@ import (
 func (m Model) View() string {
 	visible := m.visibleRows()
 	listed := make([]string, 0, visible)
-	for offset := 0; offset < visible; offset++ {
+	for offset := range visible {
 		index := m.top + offset
 		if index >= len(m.rows) {
 			break

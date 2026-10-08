@@ -271,8 +271,7 @@ func transient(err error) bool {
 		return true
 	}
 
-	var dns *net.DNSError
-	if errors.As(err, &dns) {
+	if dns, ok := errors.AsType[*net.DNSError](err); ok {
 		// A lookup that timed out may answer on the next ask; one that says the
 		// name is not there will say so however many times it is asked. The
 		// timeout half is recorded rather than exercised: the standard library
@@ -326,13 +325,11 @@ func (t *Transport) classify(response *http.Response) error {
 // service that refuses the credentials will refuse them again, and a status it
 // will never answer — 501, 505 — is not worth a second ask.
 func retryable(refusal error) bool {
-	var limited *RateLimited
-	if errors.As(refusal, &limited) {
+	if _, ok := errors.AsType[*RateLimited](refusal); ok {
 		return true
 	}
 
-	var down *Unavailable
-	if errors.As(refusal, &down) {
+	if down, ok := errors.AsType[*Unavailable](refusal); ok {
 		switch down.Status {
 		case http.StatusInternalServerError, http.StatusBadGateway,
 			http.StatusServiceUnavailable, http.StatusGatewayTimeout:
@@ -390,13 +387,11 @@ func (t *Transport) delayFor(cause error, retry int) time.Duration {
 
 // namedWait is what the service asked for, and zero when it asked for nothing.
 func namedWait(cause error) time.Duration {
-	var limited *RateLimited
-	if errors.As(cause, &limited) {
+	if limited, ok := errors.AsType[*RateLimited](cause); ok {
 		return limited.RetryAfter
 	}
 
-	var down *Unavailable
-	if errors.As(cause, &down) {
+	if down, ok := errors.AsType[*Unavailable](cause); ok {
 		return down.RetryAfter
 	}
 	return 0

@@ -119,22 +119,26 @@ func Labelled(border, activeBorder, badge *lipgloss.Style, box, label string, ac
 		return box
 	}
 
+	// Asked once: the label is measured three times over below, and each ask
+	// walks the string's escape sequences again.
+	labelWidth := ansi.StringWidth(label)
+
 	lines := strings.Split(box, "\n")
 	bottom := ansi.Strip(lines[len(lines)-1])
 	runes := []rune(bottom)
 
 	const margin = 2
 	room := len(runes) - margin*2
-	if lipgloss.Width(label) > room {
+	if labelWidth > room {
 		return box
 	}
 
 	if active {
 		border = activeBorder
 	}
-	at := len(runes) - margin - lipgloss.Width(label)
+	at := len(runes) - margin - labelWidth
 	lines[len(lines)-1] = border.Render(string(runes[:at])) +
 		badge.Render(label) +
-		border.Render(string(runes[at+lipgloss.Width(label):]))
+		border.Render(string(runes[at+labelWidth:]))
 	return strings.Join(lines, "\n")
 }

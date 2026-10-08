@@ -3,6 +3,7 @@ package wintarget
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -133,12 +134,7 @@ func (p *probe) seams() seams {
 }
 
 func (p *probe) called(step string) bool {
-	for _, call := range p.calls {
-		if call == step {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.calls, step)
 }
 
 // expectCalls pins the whole order of a delivery, which is the part of it that

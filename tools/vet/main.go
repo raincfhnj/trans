@@ -70,7 +70,7 @@ func list(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("listing the packages: %w", err)
 	}
 	var packages []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			packages = append(packages, line)
 		}

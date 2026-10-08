@@ -3,21 +3,48 @@ version: "2"
 linters:
   default: standard
   enable:
+    # The standard set plus the checks that keep a reader of this tree honest:
+    # modernize and intrange keep the Go modern, forcetypeassert and
+    # nolintlint keep the shortcuts written down, and prealloc, errchkjson,
+    # mirror, canonicalheader, durationcheck, goprintffuncname and the rest
+    # are cheap rules with no opinion about how the program should be built.
     - bodyclose
+    - canonicalheader
+    - contextcheck
     - copyloopvar
+    - durationcheck
+    - dupword
+    - embeddedstructfieldcheck
+    - errchkjson
     - errorlint
+    - forcetypeassert
+    - godot
     - gocritic
+    - goprintffuncname
     - gosec
+    - intrange
+    - mirror
     - misspell
+    - modernize
     - nilerr
+    - nilnesserr
     - noctx
+    - nolintlint
     - perfsprint
+    - prealloc
+    - predeclared
     - revive
     - unconvert
     - unparam
     - usestdlibvars
+    - usetesting
     - wastedassign
   settings:
+    goconst:
+      # Three copies of a string in one package is how a fourth slips in
+      # unnoticed; two is how a name is used. The tests are excused below —
+      # a fixture repeated across cases reads better than a constant.
+      min-occurrences: 3
     gocritic:
       enabled-tags:
         - diagnostic
@@ -38,9 +65,16 @@ linters:
         linters:
           - gosec
           - unparam
+          # A test repeats its fixtures on purpose: the string beside the
+          # case is what the case is about, and a checked assertion in a test
+          # would only turn a failed expectation into a panic with a worse
+          # message than the comparison it replaced.
+          - dupword
+          - forcetypeassert
+          - goconst
       # Win32 hands pointers back as numbers, and there is no way to read what
-      # they point at without unsafe. The two places that turn one into a
-      # pointer say so themselves with a site-scoped nolint, so this rule no
+      # they point at without unsafe. The place that turns one back into a
+      # pointer says so itself with a site-scoped nolint, so this rule no
       # longer has to excuse the whole package from govet: a longer-lived
       # suppression than the problem needs is how a real finding hides.
       - path: internal/(win32|tray)/

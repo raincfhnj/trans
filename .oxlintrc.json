@@ -1,0 +1,12 @@
+{
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "ignorePatterns": [
+    "bin/",
+    "dist/",
+    "node_modules/"
+  ]
+}

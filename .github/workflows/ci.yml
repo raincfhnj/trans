@@ -29,6 +29,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The workflows are code as much as the Go is: actionlint reads them
+      # the way golangci-lint reads the tree, and on this runner it also puts
+      # every `run:` block through shellcheck, so a shell mistake in a step
+      # is caught before the step is ever run. The version is pinned the same
+      # way `make tools` pins it, so the gate here and the gate on a
+      # developer's machine are one gate.
+      - name: The workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
       - name: Lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -163,3 +172,34 @@ jobs:
       # and `-shuffle=on` is the same order independence the linux job asks for.
       - name: Test
         run: go test -count=1 -shuffle=on ./...
+
+  # The tree is Go today, and this is the gate that starts working the moment
+  # it holds JavaScript or TypeScript instead: oxlint reads whatever such
+  # files exist, and while there are none the job says so rather than going
+  # red over a linter with nothing to read. The guard and the pinned version
+  # live in the Makefile, so `make lint-web` and this job are one gate.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint JavaScript and TypeScript
+        run: make lint-web
+
+  # govulncheck above knows the tree as it stands; this one knows what a pull
+  # request is about to add to it — a dependency arriving with a known
+  # vulnerability, or under a license this project does not take. It runs on
+  # pull requests only, where there is a base branch to compare against.
+  dependencies:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v4
+        with:
+          # A new advisory at low severity is worth a note, not a blocked
+          # pull request; one that could actually be exploited is.
+          fail-on-severity: high

@@ -1,0 +1,29 @@
+# EditorConfig is what reaches the file before any gate does: the editor's
+# own idea of indentation and endings, so two editors disagree about a file
+# for the same reason a linter would. `.gitattributes` keeps git from
+# touching the endings and gofumpt keeps the Go bytes; this is the third of
+# the three agreeing.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Go is tabs, as gofmt and gofumpt write it.
+[*.go]
+indent_style = tab
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# A trailing double space is a line break in markdown, not a mistake.
+[*.md]
+trim_trailing_whitespace = false

@@ -83,8 +83,7 @@ func TestAnUnreachableServiceKeepsWhatTheTransportSaid(t *testing.T) {
 	if !errors.Is(unreached, httpapi.ErrNetwork) {
 		t.Error("errors.Is did not find the class of an unreachable service")
 	}
-	var found *net.OpError
-	if !errors.As(unreached, &found) {
+	if _, ok := errors.AsType[*net.OpError](unreached); !ok {
 		t.Error("errors.As could not reach what the transport complained about")
 	}
 	if !strings.Contains(unreached.Error(), "connection refused") {

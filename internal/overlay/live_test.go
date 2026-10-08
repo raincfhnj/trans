@@ -23,7 +23,7 @@ func TestWritingKeepsLiveTranslationOn(t *testing.T) {
 			Debounce: 10 * time.Millisecond,
 		})
 
-	for _, word := range strings.Fields("Bitte behebe den fehlschlagenden Test im Formular") {
+	for word := range strings.FieldsSeq("Bitte behebe den fehlschlagenden Test im Formular") {
 		overlayUnderTest.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(word + " ")})
 	}
 

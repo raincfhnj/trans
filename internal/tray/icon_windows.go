@@ -97,8 +97,8 @@ func markIcon() (windows.Handle, error) {
 	// already keeps the corners clear, but a mask that agrees with it is what
 	// older hosts read.
 	mask := make([]byte, iconSize*iconSize/8)
-	for y := 0; y < iconSize; y++ {
-		for x := 0; x < iconSize; x++ {
+	for y := range iconSize {
+		for x := range iconSize {
 			if !insideSquare(shapeAt(x), shapeAt(y)) {
 				mask[y*iconSize/8+x/8] |= 0x80 >> uint(x%8)
 			}
@@ -152,12 +152,12 @@ func shapeAt(pixel int) float64 {
 // pixel on an edge is a little of both sides and the mark reads as smooth
 // rather than as a staircase of blocks.
 func drawMark(pixels *[iconSize * iconSize * 4]byte) {
-	for y := 0; y < iconSize; y++ {
-		for x := 0; x < iconSize; x++ {
+	for y := range iconSize {
+		for x := range iconSize {
 			// Colour and coverage summed over the samples within the pixel.
 			var red, green, blue, cover float64
-			for sy := 0; sy < iconSample; sy++ {
-				for sx := 0; sx < iconSample; sx++ {
+			for sy := range iconSample {
+				for sx := range iconSample {
 					px := (float64(x) + (float64(sx)+0.5)/iconSample) * shapeSize / iconSize
 					py := (float64(y) + (float64(sy)+0.5)/iconSample) * shapeSize / iconSize
 					if !insideSquare(px, py) {

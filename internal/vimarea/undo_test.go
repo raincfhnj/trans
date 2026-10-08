@@ -90,7 +90,7 @@ func TestUndoAfterCountedDD(t *testing.T) {
 	value(t, "2ddu (vim: 'a\\nb\\nc\\nd')", m, "a\nb\nc\nd")
 }
 
-// these should already work
+// these should already work.
 func TestUndoAfterDDAndPaste(t *testing.T) {
 	m := press(box(t, "a\nb\nc"), "dd")
 	m = press(m, "u")

@@ -135,7 +135,7 @@ func TestWordBackwardAcrossLines(t *testing.T) {
 	cursor(t, "b from row1 col0 (vim: row0 col4, start of 'two')", m, 0, 4)
 }
 
-// plain whitespace words still work
+// plain whitespace words still work.
 func TestWordMotionsPlainWords(t *testing.T) {
 	m := box(t, "alpha beta gamma")
 	m = press(m, "w")

@@ -53,7 +53,7 @@ type input struct {
 
 // inputUnion is that room: the keyboard event at the start of it, where the
 // union begins, and the rest left as it is. The tag that says which kind of
-// event this is is not part of it — Windows reads that from input.kind — and
+// event this describes is not part of it — Windows reads that from input.kind — and
 // the rest of the room is for the mouse event this package never sends:
 // SendInput measures the size of INPUT before it has read any of it, so the
 // union has to be the largest member's width whatever actually goes out.

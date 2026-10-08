@@ -10,14 +10,14 @@ import (
 // sits in it. The drawing itself is the frame's, shared with the two smaller
 // windows; what is the overlay's own is which palette slots it is painted with.
 func (m Model) scrolled(body string, first, visible, total int) string {
-	return frame.Scrolled(m.palette(), m.contentWidth(), body, first, visible, total)
+	return frame.Scrolled(m.barStyles(), m.contentWidth(), body, first, visible, total)
 }
 
-// palette is the two slots the bar is painted from, gathered in the shape the
+// barStyles is the two slots the bar is painted from, gathered in the shape the
 // frame draws with. It is built per call rather than kept: the rest of the
 // overlay's palette has names of its own — a cursor, a mode — that the frame
-// has no slot for.
-func (m Model) palette() *frame.Styles {
+// has no slot for, and the panel's own palette is kept whole for the boxes.
+func (m Model) barStyles() *frame.Styles {
 	return &frame.Styles{Mark: m.styles.mark, Accent: m.styles.accent}
 }
 

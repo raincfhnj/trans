@@ -13,7 +13,9 @@ import (
 	"trans/internal/selection"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/muesli/termenv"
 )
 
 const (
@@ -266,4 +268,56 @@ func TestAShortTranslationNeedsNoBar(t *testing.T) {
 		t.Error("a translation that fits offers the keys to read it")
 	}
 	closeSelection(t, model)
+}
+
+// The window follows the theme the panel was given, so the box being read is
+// drawn in that theme's accent slot rather than always in the default's.
+func TestTheBorderIsPaintedInTheThemesAccentSlot(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	// The default palette lights slot 5 and ocean slot 4; a full colour
+	// profile draws each slot as the basic sequence named after it.
+	themes := []struct {
+		name   string
+		accent string
+	}{
+		{"", "35m"},
+		{"ocean", "34m"},
+	}
+
+	borders := map[string]string{}
+	for _, theme := range themes {
+		model := selection.New(context.Background(), &stubTranslator{english: english},
+			selection.Options{Source: selected, Theme: theme.name})
+		border := readingBorder(model.View())
+		if border == "" {
+			t.Fatalf("theme %q draws no box to be read", theme.name)
+		}
+		if !strings.Contains(border, theme.accent) {
+			t.Errorf("theme %q is not drawn in accent slot sequence %s: %q",
+				theme.name, theme.accent, border)
+		}
+		borders[theme.name] = border
+	}
+	if borders[""] == borders["ocean"] {
+		t.Error("the two themes draw the same border")
+	}
+}
+
+// readingBorder is the top border of the box being read — the second one on
+// screen, because the selection is drawn first.
+func readingBorder(view string) string {
+	top := ""
+	for line := range strings.SplitSeq(view, "\n") {
+		if !strings.Contains(line, "╭") {
+			continue
+		}
+		if top != "" {
+			return line
+		}
+		top = line
+	}
+	return ""
 }

@@ -285,6 +285,9 @@ directory that holds it is known, so a line inside the file cannot move it.
 | `TRANS_LIVE` | `1` | `0` translates only on send |
 | `TRANS_CONFIRM` | `0` | `1` shows English before sending |
 | `TRANS_KEEP_DRAFT` | `1` | `0` starts with empty box |
+| `TRANS_THEME` | auto | Colour scheme: `auto` follows the terminal; `ocean`, `forest`, `amber`, `mono` are built in |
+| `TRANS_DRAFT_ROWS` | `6` | Rows the draft box asks the terminal for, from `4` to `16` |
+| `TRANS_PANEL_WIDTH` | `110` | Columns the panel popup asks for, from `60` to `180` |
 | `TRANS_MAX_DRAFT` | `2000` | Characters before warning |
 | `TRANS_PULSE` | `1` | `0` stops the live circle animation |
 | `TRANS_LOGO` | `1` | `0` hides the draft box signature |
@@ -307,6 +310,9 @@ directory that holds it is known, so a line inside the file cannot move it.
 offers over the pane in front:
 
 - Values are changed with `←` `→` or written in with `enter`, and `s` saves.
+- Stepping the theme row repaints the settings window as it goes — a live
+  preview; the panel and the selection window take it up the next time they
+  open.
 - What is saved goes into the `.env` in the config directory; every other line
   stays as it stands.
 - A variable set in the environment wins over the file, so those rows carry an

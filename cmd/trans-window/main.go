@@ -151,6 +151,15 @@ func runOpen(arguments []string) error {
 	if err != nil {
 		return err
 	}
+	// The size this panel asks its host for comes from the settings, so they are
+	// read here the way the other commands read them: the panel to open over is
+	// chosen below, and the key has to be the one the panel would resolve.
+	config.Prepare()
+	cfg, err := config.Load(os.Getenv)
+	if err != nil {
+		return err
+	}
+	protectKey(&cfg)
 
 	popup := popupOptions{
 		read:    options.read,
@@ -169,7 +178,7 @@ func runOpen(arguments []string) error {
 		}
 		popup.probe = milliseconds
 	}
-	return openOver(popup, options.target, overlay.PopupWidth, overlay.PopupHeight())
+	return openOver(popup, options.target, cfg.PanelWidth, overlay.PopupHeight(cfg.DraftRows))
 }
 
 // popupOptions is which window the child process draws, and what it was asked
@@ -502,7 +511,7 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 
 	winlog.Notef("panel", "opening over %#x %q, service %s, paste %s",
 		window.Handle, window.Title, chosen.Name, pasteKeys)
-	placeOver(window, overlay.PopupWidth, overlay.PopupHeight())
+	placeOver(window, cfg.PanelWidth, overlay.PopupHeight(cfg.DraftRows))
 
 	flow := panelFlow(chosen, window, pasteKeys, read)
 
@@ -548,6 +557,13 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 
 			Drafts:  drafts(cfg, window.Title),
 			History: historyLog(cfg, window.Title),
+
+			// The colour scheme and the box's size are chosen in the settings, so
+			// they reach the panel the same way the rest of the options do; the
+			// window that opens next is the one they take effect in.
+			Theme:      cfg.Theme,
+			DraftRows:  cfg.DraftRows,
+			PanelWidth: cfg.PanelWidth,
 		}),
 		programOptions...,
 	)
@@ -669,6 +685,8 @@ func selectionWindow(window win32.Window, cfg *config.Settings) error {
 			SelectCopy:     cfg.SelectCopy,
 			Trouble:        trouble,
 			WithoutService: !chosen.Translates,
+			// The colour scheme is a setting, so this window draws in it too.
+			Theme: cfg.Theme,
 		}))
 }
 

@@ -6,9 +6,11 @@
 package settings
 
 import (
+	"strconv"
 	"strings"
 
 	"trans/internal/config"
+	"trans/internal/frame"
 )
 
 // kind is what a row does with the keys: written with enter, stepped through
@@ -24,6 +26,9 @@ const (
 	// chord is a key combination that must name one; a hotkey may also be off.
 	chord
 	hotkey
+	// number is a whole number between min and max: the arrows step it and
+	// enter writes it.
+	number
 )
 
 type row struct {
@@ -40,6 +45,8 @@ type row struct {
 	// choices are the values a choice row steps through; auto comes first and
 	// stands for nothing.
 	choices []string
+	// min and max are the two ends a number row stands between.
+	min, max int
 	// empty is what a row with no value says instead of showing a gap.
 	empty string
 }
@@ -61,8 +68,8 @@ func (row *row) shown() string {
 }
 
 // buildRows is every setting this window offers, in the order they read:
-// what the translation goes through, how the panel behaves, and the chords
-// that call it up.
+// what the translation goes through, how the panel behaves, how it looks and
+// how much room it takes, and the chords that call it up.
 func buildRows(settings config.Settings, options Options) []*row {
 	// The key is read from the service's own variable when a service is named,
 	// and written back to the same place.
@@ -116,6 +123,23 @@ func buildRows(settings config.Settings, options Options) []*row {
 		{
 			label: "keep draft", variable: config.KeepDraftVar, kind: flag,
 			value: onOff(settings.KeepDraft),
+		},
+		{
+			// An empty theme is auto: the palette the window has always drawn
+			// with, so it stands first and is shown under that name.
+			label: "theme", variable: config.ThemeVar, kind: choice,
+			choices: append([]string{"auto"}, frame.ThemeNames()...),
+			value:   settings.Theme,
+		},
+		{
+			label: "draft rows", variable: config.DraftRowsVar, kind: number,
+			value: strconv.Itoa(settings.DraftRows),
+			min:   config.DraftRowsLow, max: config.DraftRowsHigh,
+		},
+		{
+			label: "panel width", variable: config.PanelWidthVar, kind: number,
+			value: strconv.Itoa(settings.PanelWidth),
+			min:   config.PanelWidthLow, max: config.PanelWidthHigh,
 		},
 		{
 			label: "paste keys", variable: config.PasteVar, kind: chord,

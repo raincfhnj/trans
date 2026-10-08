@@ -188,7 +188,7 @@ func (m Model) historyView() string {
 	}
 
 	box := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
-		frame.Box(true, m.width).Height(rows).Render(
+		m.palette.Box(true, m.width).Height(rows).Render(
 			m.scrolled(strings.Join(shown, "\n"), m.historyFrom, rows, total)),
 		frame.HowFarThrough(m.historyFrom, rows, total), true)
 	line := lipgloss.Width(box)

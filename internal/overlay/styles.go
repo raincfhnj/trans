@@ -1,16 +1,9 @@
 package overlay
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"trans/internal/frame"
 
-// The terminal paints its palette from the active theme but does not expose
-// the theme itself, so the overlay only names palette slots and lets whatever
-// theme is running decide how they look.
-var (
-	accent = lipgloss.Color("5")
-	danger = lipgloss.Color("1")
-	// The frame is a line, not something to read, so grey suits it.
-	grey   = lipgloss.Color("8")
-	bright = lipgloss.Color("13")
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Foregrounds only: a cell left alone keeps the background the terminal painted.
@@ -44,22 +37,25 @@ func (s styles) cursorFor(placed *CursorPlace) lipgloss.Style {
 	return s.cursor
 }
 
-func newStyles() styles { // Anything meant to be read keeps the terminal's own foreground: grey on a
-	// dark theme, or on a light one, is what makes a popup unreadable. The
-	// difference between a key and its label is weight, not brightness.
+// newStyles builds the panel's styles from a palette, which only names slots of
+// the terminal's own theme. Anything meant to be read keeps the terminal's own
+// foreground: grey on a dark theme, or on a light one, is what makes a popup
+// unreadable. The difference between a key and its label is weight, not
+// brightness.
+func newStyles(p frame.Palette) styles {
 	return styles{
 		text:        lipgloss.NewStyle(),
 		placeholder: lipgloss.NewStyle().Faint(true),
-		cursor:      lipgloss.NewStyle().Foreground(accent),
+		cursor:      lipgloss.NewStyle().Foreground(p.Accent),
 		badge:       lipgloss.NewStyle(),
 		hint:        lipgloss.NewStyle(),
-		key:         lipgloss.NewStyle().Foreground(accent).Bold(true),
-		accent:      lipgloss.NewStyle().Foreground(accent),
-		danger:      lipgloss.NewStyle().Foreground(danger).Bold(true),
+		key:         lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
+		accent:      lipgloss.NewStyle().Foreground(p.Accent),
+		danger:      lipgloss.NewStyle().Foreground(p.Danger).Bold(true),
 		faded:       lipgloss.NewStyle().Faint(true),
-		bright:      lipgloss.NewStyle().Foreground(bright).Bold(true),
-		mode:        lipgloss.NewStyle().Foreground(accent).Bold(true),
+		bright:      lipgloss.NewStyle().Foreground(p.Bright).Bold(true),
+		mode:        lipgloss.NewStyle().Foreground(p.Accent).Bold(true),
 		off:         lipgloss.NewStyle().Strikethrough(true),
-		mark:        lipgloss.NewStyle().Foreground(grey),
+		mark:        lipgloss.NewStyle().Foreground(p.Grey),
 	}
 }

@@ -45,14 +45,37 @@ const (
 	// KeysVar decides how the provider key is kept on disk: "dpapi" wraps it
 	// with Windows Data Protection (the default), "plain" leaves the .env
 	// line alone and skips the migration. The settings window shows it.
-	KeysVar      = "TRANS_KEYS"
-	configDirVar = "TRANS_CONFIG_DIR"
-	stateDirVar  = "TRANS_STATE_DIR"
+	KeysVar = "TRANS_KEYS"
+	// ThemeVar names the colour scheme the panel draws itself in; an empty
+	// value leaves the terminal's own palette in charge.
+	ThemeVar = "TRANS_THEME"
+	// DraftRowsVar is how many rows the draft box of the panel asks its
+	// terminal for, and PanelWidthVar how many columns the popup asks for.
+	// Both ends of what may be asked for are named below, so the settings
+	// window writes back the same numbers this reading refuses.
+	DraftRowsVar  = "TRANS_DRAFT_ROWS"
+	PanelWidthVar = "TRANS_PANEL_WIDTH"
+	configDirVar  = "TRANS_CONFIG_DIR"
+	stateDirVar   = "TRANS_STATE_DIR"
 
 	historyVar      = "TRANS_HISTORY"
 	historyLimitVar = "TRANS_HISTORY_LIMIT"
 
 	defaultHistoryLimit = 500
+
+	// The two ends are what the settings window will accept to write as
+	// well: a number outside them is refused here rather than quietly
+	// brought back in, so the two never disagree about what is a whole
+	// number of rows or columns worth asking the terminal for.
+	DraftRowsLow     = 4
+	DraftRowsHigh    = 16
+	DefaultDraftRows = 6
+	// The panel popup is too narrow to read a line under the low end and
+	// wider than any terminal under the high end; both ends are refused
+	// here and by the settings window alike.
+	PanelWidthLow     = 60
+	PanelWidthHigh    = 180
+	DefaultPanelWidth = 110
 
 	defaultLanguage = "EN-US"
 	dotenvName      = ".env"
@@ -131,6 +154,15 @@ type Settings struct {
 	// HistoryLimit is how many delivered prompts are kept before the oldest
 	// ones are dropped.
 	HistoryLimit int
+	// Theme is the name of the colour scheme; empty follows the terminal's
+	// default palette. A name this package does not know is left alone for
+	// the frame package to fall back from, so config stays neutral about
+	// how the panel looks.
+	Theme string
+	// DraftRows is the number of rows the draft box of the panel asks for.
+	DraftRows int
+	// PanelWidth is the number of columns the panel popup asks for.
+	PanelWidth int
 }
 
 // The environment wins over the .env file, so a one-off invocation can
@@ -184,6 +216,13 @@ func Load(getenv func(string) string) (Settings, error) {
 
 		History:      given.flag(historyVar, true),
 		HistoryLimit: given.count(historyLimitVar, defaultHistoryLimit),
+
+		// A theme is taken as written, name and all: this package does not
+		// know which names exist, so an unknown one is left for the frame
+		// package to fall back from.
+		Theme:      lookup(ThemeVar),
+		DraftRows:  given.between(DraftRowsVar, DraftRowsLow, DraftRowsHigh, DefaultDraftRows),
+		PanelWidth: given.between(PanelWidthVar, PanelWidthLow, PanelWidthHigh, DefaultPanelWidth),
 
 		Options: translation.Options{
 			APIKey:         orDefault(lookup(ScopedKeyVar(provider)), lookup(ApiKeyVar)),
@@ -251,6 +290,22 @@ func (r *reading) count(variable string, whenUnset int) int {
 	number, err := strconv.Atoi(value)
 	if err != nil || number < 1 {
 		r.refuse(variable, value, "not a positive whole number")
+		return whenUnset
+	}
+	return number
+}
+
+// A number outside the ends it may sit between is refused rather than
+// quietly brought back in: the window would have refused to write it too.
+func (r *reading) between(variable string, low, high, whenUnset int) int {
+	value := strings.TrimSpace(r.lookup(variable))
+	if value == "" {
+		return whenUnset
+	}
+
+	number, err := strconv.Atoi(value)
+	if err != nil || number < low || number > high {
+		r.refuse(variable, value, fmt.Sprintf("a whole number between %d and %d", low, high))
 		return whenUnset
 	}
 	return number

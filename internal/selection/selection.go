@@ -56,6 +56,10 @@ type Options struct {
 	Trouble error
 	// WithoutService says there is nothing to translate with.
 	WithoutService bool
+	// Theme is the name frame.PaletteFor knows, the same one the panel was
+	// given so this window is drawn the way the rest of the program is; empty
+	// draws with the default.
+	Theme string
 }
 
 type Model struct {
@@ -63,7 +67,10 @@ type Model struct {
 	translator Translator
 	options    Options
 	styles     frame.Styles
-	spinner    spinner.Model
+	// palette is the slots the boxes are drawn from, kept beside the styles
+	// because every draw builds the border styles out of it.
+	palette frame.Palette
+	spinner spinner.Model
 	// translating is on from the first frame, so the wait is said while it lasts.
 	translating bool
 	// translated is the answer on screen; failure the last one that did not come.
@@ -75,7 +82,8 @@ type Model struct {
 }
 
 func New(ctx context.Context, translator Translator, options Options) Model {
-	look := frame.NewStyles()
+	palette := frame.PaletteFor(options.Theme)
+	look := palette.Styles()
 
 	working := spinner.New()
 	working.Spinner = spinner.Dot
@@ -86,6 +94,7 @@ func New(ctx context.Context, translator Translator, options Options) Model {
 		translator: translator,
 		options:    options,
 		styles:     look,
+		palette:    palette,
 		spinner:    working,
 		pane: tea.WindowSizeMsg{
 			Width:  PopupWidth,

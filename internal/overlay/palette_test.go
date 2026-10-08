@@ -49,7 +49,7 @@ func TestThePopupIsTallEnoughForTheDraftAndTheTranslation(t *testing.T) {
 		})
 		model, _ = model.Update(tea.WindowSizeMsg{
 			Width:  overlay.PopupWidth - overlay.PopupBorder,
-			Height: overlay.PopupHeight() - overlay.PopupBorder,
+			Height: overlay.PopupHeight(overlay.DraftHeight) - overlay.PopupBorder,
 		})
 
 		rows := overlay.DraftRows(model.(overlay.Model))

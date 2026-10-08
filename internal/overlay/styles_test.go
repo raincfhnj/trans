@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"trans/internal/frame"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -16,7 +18,7 @@ func TestNoTextIsDrawnInGrey(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.ANSI)
 	defer lipgloss.SetColorProfile(previous)
 
-	look := newStyles()
+	look := newStyles(frame.DefaultPalette)
 	for name, style := range map[string]lipgloss.Style{
 		"text":        look.text,
 		"badge":       look.badge,

@@ -40,9 +40,10 @@ func TestSpreadKeepsTheBeginningWhenBothEndsDoNotFit(t *testing.T) {
 
 func TestTheLabelIsWrittenIntoTheBottomBorder(t *testing.T) {
 	t.Parallel()
-	styles := frame.NewStyles()
+	palette := frame.DefaultPalette
+	styles := palette.Styles()
 
-	box := frame.Box(true, 40).Render("the writing")
+	box := palette.Box(true, 40).Render("the writing")
 	labelled := frame.Labelled(&styles.Mark, &styles.Badge, &styles.Badge, box, "45%", true)
 
 	border := strings.Split(labelled, "\n")
@@ -56,9 +57,10 @@ func TestTheLabelIsWrittenIntoTheBottomBorder(t *testing.T) {
 
 func TestALabelThatDoesNotFitIsLeftOut(t *testing.T) {
 	t.Parallel()
-	styles := frame.NewStyles()
+	palette := frame.DefaultPalette
+	styles := palette.Styles()
 
-	box := frame.Box(true, 14).Render("text")
+	box := palette.Box(true, 14).Render("text")
 	if labelled := frame.Labelled(&styles.Mark, &styles.Badge, &styles.Badge, box, "a-label-far-too-long", true); labelled != box {
 		t.Errorf("the box is %q, want it untouched by a label without room", labelled)
 	}
@@ -66,7 +68,7 @@ func TestALabelThatDoesNotFitIsLeftOut(t *testing.T) {
 
 func TestTheBarTellsWhereTheViewSits(t *testing.T) {
 	t.Parallel()
-	styles := frame.NewStyles()
+	styles := frame.DefaultPalette.Styles()
 	body := strings.Repeat("a line of text\n", 20)
 
 	shown := frame.Scrolled(&styles, 30, strings.TrimSuffix(body, "\n"), 0, 5, 20)
@@ -88,7 +90,7 @@ func TestTheBarTellsWhereTheViewSits(t *testing.T) {
 
 func TestTextThatFitsHasNoBar(t *testing.T) {
 	t.Parallel()
-	styles := frame.NewStyles()
+	styles := frame.DefaultPalette.Styles()
 
 	body := "one line\nand another"
 	shown := frame.Scrolled(&styles, 30, body, 0, 5, 2)

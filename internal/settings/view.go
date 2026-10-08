@@ -19,7 +19,7 @@ func (m Model) View() string {
 		listed = append(listed, m.rowLine(m.rows[index], index))
 	}
 
-	box := frame.Box(true, m.pane.Width).Height(visible).
+	box := m.palette.Box(true, m.pane.Width).Height(visible).
 		Render(strings.Join(listed, "\n"))
 	box = frame.Labelled(&m.styles.Mark, &m.styles.Badge, &m.styles.Badge, box,
 		frame.HowFarThrough(m.top, visible, len(m.rows)), true)
@@ -152,10 +152,11 @@ func (m Model) footer(line int) string {
 }
 
 // rowKey is what the row under the cursor takes: arrows for a row with values
-// to step through, enter for one that is written.
+// to step through, enter for one that is written. A number takes both — the
+// arrows move it and enter writes it whole.
 func (m Model) rowKey() [2]string {
 	switch m.rows[m.cursor].kind {
-	case choice, flag:
+	case choice, flag, number:
 		return [2]string{"←→", "change"}
 	default:
 		return [2]string{"enter", "edit"}

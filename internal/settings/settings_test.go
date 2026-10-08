@@ -10,11 +10,14 @@ import (
 	"time"
 
 	"trans/internal/config"
+	"trans/internal/frame"
 	"trans/internal/settings"
 	"trans/internal/translation"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/muesli/termenv"
 )
 
 // Enough services to step through, in the order the registry would give them.
@@ -50,6 +53,8 @@ func fullSettings(file string) config.Settings {
 		Vim:          false,
 		KeepDraft:    true,
 		Confirm:      false,
+		DraftRows:    config.DefaultDraftRows,
+		PanelWidth:   config.DefaultPanelWidth,
 		SelectCopy:   "ctrl+shift+c",
 		Hotkey:       "ctrl+alt+t",
 		SelectHotkey: "ctrl+alt+s",
@@ -329,7 +334,7 @@ func TestAChordThatCannotBePressedIsRefusedByName(t *testing.T) {
 		Chord:    refusingBogus,
 	})
 
-	stepDown(model, 12) // select copy
+	stepDown(model, 15) // select copy
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bogus")})
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
@@ -354,7 +359,7 @@ func TestASavedHotkeySaysTheDaemonNeedsRestarting(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 13) // panel hotkey
+	stepDown(model, 16) // panel hotkey
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
@@ -398,5 +403,168 @@ func TestSavingWithNoConfigurationFileIsRefused(t *testing.T) {
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 
 	waitFor(t, model, "no configuration file")
+	closeWindow(t, model)
+}
+
+// The theme row steps through the themes the frame offers, auto first and
+// then its own names in its own order, and the window puts the colours on as
+// the arrows move — so the theme is picked by looking at it rather than by
+// closing the panel and opening it again.
+func TestTheThemeRowStepsThroughTheFrameThemesAndDressesTheWindow(t *testing.T) {
+	t.Parallel()
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	model := newWindow(t, settings.Options{
+		Settings: fullSettings(""),
+		Services: services,
+		Chord:    acceptingChord,
+	})
+
+	// The window opens on the palette with no name: slot 5 is the accent it
+	// has always drawn with, and the row says auto.
+	shown := waitFor(t, model, "theme", "auto")
+	if !bytes.Contains(shown, []byte("\x1b[35m")) {
+		t.Error("the window is not drawn with the accent of the palette with no name")
+	}
+	stepDown(model, 11) // theme
+
+	// Every arrow lands on the next theme the frame names, and by the time it
+	// is named the window is already wearing it: the border is lit with the
+	// slot that theme puts its accent in.
+	accents := map[string]string{
+		"ocean": "\x1b[34m", "forest": "\x1b[32m",
+		"amber": "\x1b[33m", "mono": "\x1b[37m",
+	}
+	for _, theme := range frame.ThemeNames() {
+		accent, known := accents[theme]
+		if !known {
+			t.Fatalf("no accent slot is recorded for the theme %q", theme)
+		}
+		model.Send(tea.KeyMsg{Type: tea.KeyRight})
+		shown = waitFor(t, model, theme, accent)
+		if !bytes.Contains(shown, []byte(accent)) {
+			t.Errorf("stepping to %s did not repaint the window in the accent of that theme", theme)
+		}
+	}
+
+	// One more arrow and the themes are behind the row: it is back on auto,
+	// and the window is back on the palette with no name.
+	model.Send(tea.KeyMsg{Type: tea.KeyRight})
+	shown = waitFor(t, model, "auto", "\x1b[35m")
+	if !bytes.Contains(shown, []byte("\x1b[35m")) {
+		t.Error("leaving the themes behind did not put the window back on its own palette")
+	}
+	closeWindow(t, model)
+}
+
+// The draft rows row is a number: an arrow moves it by one, and the save
+// writes the number it stopped on.
+func TestTheDraftRowsArrowStepsItAndTheSaveWritesTheNumber(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), ".env")
+
+	model := newWindow(t, settings.Options{
+		Settings: fullSettings(file),
+		Services: services,
+		Chord:    acceptingChord,
+	})
+
+	stepDown(model, 12) // draft rows, which stands on 6
+	model.Send(tea.KeyMsg{Type: tea.KeyRight})
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+	waitFor(t, model, "settings written")
+	if saved := savedFile(t, file); !strings.Contains(saved, "TRANS_DRAFT_ROWS=7") {
+		t.Errorf("the file does not hold the stepped number:\n%s", saved)
+	}
+	closeWindow(t, model)
+}
+
+// A number row keeps its arrows inside the range it stands between: however
+// far right they are pressed, the number stops at the high end of its range.
+func TestTheDraftRowsArrowNeverTakesTheNumberPastItsUpperEnd(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), ".env")
+
+	model := newWindow(t, settings.Options{
+		Settings: fullSettings(file),
+		Services: services,
+		Chord:    acceptingChord,
+	})
+
+	stepDown(model, 12) // draft rows, which stands on 6
+	for range 20 {
+		model.Send(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+	waitFor(t, model, "settings written")
+	saved := savedFile(t, file)
+	if !strings.Contains(saved, "TRANS_DRAFT_ROWS=16") {
+		t.Errorf("the arrows took the number past the top of its range:\n%s", saved)
+	}
+	closeWindow(t, model)
+}
+
+// A number written outside the range its row stands between is refused by
+// name — the row and its variable — and the file stays as it was, the way a
+// chord that cannot be pressed is refused.
+func TestANumberOutsideItsRangeIsRefusedAndTheFileStaysAsItWas(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), ".env")
+	original := "TRANS_LANGUAGE=EN-GB\n"
+	if err := os.WriteFile(file, []byte(original), 0o600); err != nil {
+		t.Fatalf("writing .env: %v", err)
+	}
+
+	model := newWindow(t, settings.Options{
+		Settings: fullSettings(file),
+		Services: services,
+		Chord:    acceptingChord,
+	})
+
+	stepDown(model, 12) // draft rows
+	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	model.Send(tea.KeyMsg{Type: tea.KeyBackspace}) // the 6 that was standing there
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("99")})
+	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+	shown := waitFor(t, model, "draft rows", "TRANS_DRAFT_ROWS",
+		"a whole number between 4 and 16")
+	if bytes.Contains(shown, []byte("settings written")) {
+		t.Error("the number outside its range was written anyway")
+	}
+	if saved := savedFile(t, file); saved != original {
+		t.Errorf("the file is now %q, want it untouched by the refused number", saved)
+	}
+	closeWindow(t, model)
+}
+
+// A number inside its range is saved the way any other row is: the window
+// says the settings were written, and the file holds what was typed.
+func TestANumberInsideItsRangeIsWrittenToTheFile(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), ".env")
+
+	model := newWindow(t, settings.Options{
+		Settings: fullSettings(file),
+		Services: services,
+		Chord:    acceptingChord,
+	})
+
+	stepDown(model, 12) // draft rows
+	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	model.Send(tea.KeyMsg{Type: tea.KeyBackspace}) // the 6 that was standing there
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10")})
+	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+
+	waitFor(t, model, "settings written")
+	if saved := savedFile(t, file); !strings.Contains(saved, "TRANS_DRAFT_ROWS=10") {
+		t.Errorf("the file does not hold what was written:\n%s", saved)
+	}
 	closeWindow(t, model)
 }

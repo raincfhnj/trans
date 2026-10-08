@@ -11,17 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// The terminal paints its palette from the active theme but does not expose
-// the theme itself, so the popups only name palette slots and let whatever
-// theme is running decide how they look.
-var (
-	accent = lipgloss.Color("5")
-	danger = lipgloss.Color("1")
-	// The frame is a line, not something to read, so grey suits it.
-	grey   = lipgloss.Color("8")
-	bright = lipgloss.Color("13")
-)
-
 // The box keeps its padding, and a column beside every line is reserved for
 // the scroll bar whether or not there is anything to scroll, so text never
 // rewraps when a bar appears.
@@ -54,56 +43,6 @@ type Styles struct {
 	// faded out.
 	Off  lipgloss.Style
 	Mark lipgloss.Style
-}
-
-func NewStyles() Styles {
-	// Anything meant to be read keeps the terminal's own foreground: grey on a
-	// dark theme, or on a light one, is what makes a popup unreadable. The
-	// difference between a key and its label is weight, not brightness.
-	return Styles{
-		Text:        lipgloss.NewStyle(),
-		Placeholder: lipgloss.NewStyle().Faint(true),
-		Badge:       lipgloss.NewStyle(),
-		Hint:        lipgloss.NewStyle(),
-		Key:         lipgloss.NewStyle().Foreground(accent).Bold(true),
-		Accent:      lipgloss.NewStyle().Foreground(accent),
-		Danger:      lipgloss.NewStyle().Foreground(danger).Bold(true),
-		Faded:       lipgloss.NewStyle().Faint(true),
-		Bright:      lipgloss.NewStyle().Foreground(bright).Bold(true),
-		Off:         lipgloss.NewStyle().Strikethrough(true),
-		Mark:        lipgloss.NewStyle().Foreground(grey),
-
-		// The accented border marks the box being written in or read; the other
-		// one recedes into the frame's grey. They are returned by NewStyles as
-		// they are not part of the palette a window keeps.
-	}
-}
-
-// ActiveBox is the border of the box being written in or read.
-func ActiveBox() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(accent).
-		Padding(0, 1)
-}
-
-// IdleBox is the border of the box that is not being read.
-func IdleBox() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(grey).
-		Padding(0, 1)
-}
-
-// Box is a box the width of the popup, accented while it is the one being
-// written in or read. The border styles are built here rather than carried in
-// Styles: Styles is copied on every call that takes it, and two more lipgloss
-// styles in it are two more copies a redraw would pay for.
-func Box(active bool, width int) lipgloss.Style {
-	if active {
-		return ActiveBox().Width(width)
-	}
-	return IdleBox().Width(width)
 }
 
 // Labelled writes a word into the bottom border, near the right corner, where

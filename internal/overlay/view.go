@@ -25,7 +25,7 @@ func (m Model) View() string {
 
 	first, visible, total := m.draftScroll()
 	draft := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
-		frame.Box(true, m.width).Render(m.draftBody()),
+		m.palette.Box(true, m.width).Render(m.draftBody()),
 		frame.HowFarThrough(first, visible, total), true)
 	line := lipgloss.Width(draft)
 
@@ -80,7 +80,7 @@ func (m Model) readingView() string {
 	shown := style.Render(frame.RowsFrom(text, m.contentWidth(), m.readingFrom, rows))
 
 	box := frame.Labelled(&m.styles.mark, &m.styles.accent, &m.styles.badge,
-		frame.Box(true, m.width).Height(rows).Render(
+		m.palette.Box(true, m.width).Height(rows).Render(
 			m.scrolled(shown, m.readingFrom, rows, total)),
 		frame.HowFarThrough(m.readingFrom, rows, total), true)
 	line := lipgloss.Width(box)
@@ -111,7 +111,7 @@ func (m Model) englishPane() string {
 	if m.translationIsCut() {
 		shown = frame.CutTo(shown, m.contentWidth()-2) + " …"
 	}
-	return frame.Box(false, m.width).Height(rows).Render(style.Render(shown))
+	return m.palette.Box(false, m.width).Height(rows).Render(style.Render(shown))
 }
 
 func (m Model) translationIsCut() bool {

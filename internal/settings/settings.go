@@ -3,6 +3,7 @@ package settings
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"trans/internal/config"
@@ -13,7 +14,7 @@ import (
 )
 
 // The window is a row per setting with the header and footer around them, so
-// its height follows the settings it offers — 16 of them, plus four.
+// its height follows the settings it offers — 19 of them, plus four.
 const (
 	PopupWidth = 100
 	chromeRows = 4
@@ -44,7 +45,11 @@ type Options struct {
 type Model struct {
 	settings config.Settings
 	options  Options
-	styles   frame.Styles
+	// palette is the four colour slots the window draws with, kept beside the
+	// styles built from it because the box in the view asks the palette
+	// rather than the styles — and a theme row repaints both at once.
+	palette frame.Palette
+	styles  frame.Styles
 	// rows is shared by every copy of the model on purpose: the window holds
 	// them, and bubbletea's copies are all the same window.
 	rows   []*row
@@ -63,7 +68,8 @@ type Model struct {
 }
 
 func New(options Options) Model {
-	look := frame.NewStyles()
+	palette := frame.PaletteFor(options.Settings.Theme)
+	look := palette.Styles()
 
 	writing := textinput.New()
 	writing.Prompt = ""
@@ -72,6 +78,7 @@ func New(options Options) Model {
 	model := Model{
 		settings: options.Settings,
 		options:  options,
+		palette:  palette,
 		styles:   look,
 		rows:     buildRows(options.Settings, options),
 		input:    writing,
@@ -188,7 +195,8 @@ func (m Model) settled() Model {
 }
 
 // stepped is an arrow on the row under the cursor: the value a choice steps
-// through, the side a flag is thrown to, and nothing at all for a row that is
+// through, the side a flag is thrown to, the number a number moves by one
+// within the range it stands between, and nothing at all for a row that is
 // written rather than chosen.
 func (m Model) stepped(direction int) Model {
 	m = m.settled()
@@ -201,13 +209,35 @@ func (m Model) stepped(direction int) Model {
 		if index := (step + direction + len(row.choices)) % len(row.choices); row.choices[index] != "auto" {
 			row.value = row.choices[index]
 		}
+		m = m.previewed(row)
 	case flag:
 		if direction > 0 {
 			row.value = "1"
 		} else {
 			row.value = "0"
 		}
+	case number:
+		// A value that does not read as a number has no place to step from,
+		// so it starts again at the low end of its range.
+		current := row.min
+		if parsed, err := strconv.Atoi(strings.TrimSpace(row.value)); err == nil {
+			current = parsed
+		}
+		row.value = strconv.Itoa(min(max(current+direction, row.min), row.max))
 	}
+	return m
+}
+
+// previewed is the window already wearing the colours of the value a row has
+// just stepped to. It answers the theme row only: the window is repainted
+// while the arrows move, so the theme is picked by looking at it rather than
+// by closing the panel and opening it again.
+func (m Model) previewed(row *row) Model {
+	if row.variable != config.ThemeVar {
+		return m
+	}
+	m.palette = frame.PaletteFor(row.value)
+	m.styles = m.palette.Styles()
 	return m
 }
 
@@ -318,7 +348,8 @@ func (m Model) changed() bool {
 
 // saving writes the changed rows into the .env file, leaving every line it
 // does not name as it stands. It refuses first and writes after: a chord that
-// cannot be pressed leaves the file alone.
+// cannot be pressed leaves the file alone, and so does a number outside the
+// range its row stands between.
 func (m Model) saving() tea.Cmd {
 	updates := map[string]string{}
 	changed := []*row{}
@@ -340,6 +371,9 @@ func (m Model) saving() tea.Cmd {
 	}
 	for _, row := range changed {
 		if err := m.chordFits(row); err != nil {
+			return func() tea.Msg { return saveResultMsg{err: err} }
+		}
+		if err := m.numberFits(row); err != nil {
 			return func() tea.Msg { return saveResultMsg{err: err} }
 		}
 	}
@@ -369,6 +403,22 @@ func (m Model) chordFits(row *row) error {
 	}
 	if err := m.options.Chord(value); err != nil {
 		return fmt.Errorf("%s (%s): %w", row.label, row.variable, err)
+	}
+	return nil
+}
+
+// numberFits is the row's value as a whole number standing inside the range
+// the row allows, or why it is not one. Anything that does not read as a
+// number — an empty line, a word, a number left out at either end — is said
+// the same way: by the row and the variable a save would have written.
+func (m Model) numberFits(row *row) error {
+	if row.kind != number {
+		return nil
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(row.value))
+	if err != nil || value < row.min || value > row.max {
+		return fmt.Errorf("%s (%s): a whole number between %d and %d",
+			row.label, row.variable, row.min, row.max)
 	}
 	return nil
 }

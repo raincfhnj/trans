@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"trans/internal/frame"
 	"trans/internal/history"
 	"trans/internal/promptflow"
 	"trans/internal/vimarea"
@@ -86,6 +87,20 @@ type Options struct {
 	// asked for and did not come — a capture that found nothing, a chord that
 	// would not press — said out loud as soon as the popup opens, like Trouble.
 	PrefillTrouble error
+	// Theme names the palette the panel is drawn with, so this window follows
+	// the theme chosen for the program's other windows. An empty name is the
+	// default palette, and a name nobody has heard of is no reason for the
+	// popup to refuse to open.
+	Theme string
+	// DraftRows is how many rows the draft box asks for. Zero takes this
+	// package's default, and either way the number is kept inside the ends
+	// config.Load refuses, so a caller that never goes near config cannot ask
+	// for a box no terminal can show.
+	DraftRows int
+	// PanelWidth is how wide the popup asks for, on the same terms as
+	// DraftRows: zero takes the default, and the ends are config's own, so
+	// what the settings window writes back is what the popup is sized to.
+	PanelWidth int
 }
 
 // CursorPlace is a cell of the frame just drawn, counted the way a terminal
@@ -144,11 +159,16 @@ const (
 )
 
 const (
-	minContentWidth = 32
-	maxContentWidth = 108
-	draftHeight     = 6
+	// draftHeight is the rows the draft box opens with — the same number
+	// config.DefaultDraftRows holds, so the popup and the settings window
+	// agree on one default rather than on two that could drift apart.
+	draftHeight = 6
 	// A prompt is rarely one line, so the draft keeps this many rows and scrolls.
 	minDraftRows = 4
+	// maxDraftRows is the other end config.Load refuses to write past. It is
+	// repeated here rather than imported so that this package keeps drawing
+	// for itself; the clamp below only catches a caller that skips config.
+	maxDraftRows = 16
 	// pastedAtOnce is how much text arriving in one keystroke counts as pasted
 	// rather than written. Nobody types this much between two updates.
 	pastedAtOnce = 200
@@ -165,8 +185,7 @@ const (
 	// PopupBorder is what a caller must add to a wanted height.
 	PopupBorder = popupChromeRows
 
-	dialogRows  = 10 // heading, draft box and footer
-	englishRows = 5  // the pane holding the translation
+	englishRows = 5 // the pane holding the translation
 	// draftFrame is the border around a box, boxPadding the column either side of
 	// its content. Lipgloss counts a width as content plus padding, so what is
 	// drawn inside a box is boxPadding narrower than the width it is given.
@@ -177,16 +196,44 @@ const (
 
 	// PopupWidth is what the panel asks for when it opens: wide enough for a
 	// sentence of the translation to be read as it stands, and the dialog then
-	// fills the popup exactly, leaving no unused space.
+	// fills the popup exactly, leaving no unused space. It is the same number
+	// config.DefaultPanelWidth holds, for the reason draftHeight gives.
 	PopupWidth = 110
+	// minPanelWidth and maxPanelWidth are the ends config.Load and the settings
+	// window already refuse to step past. They are kept here as a second line
+	// for a caller that sizes the popup without reading config: a panel too
+	// narrow to read is no use, and one wider than any terminal is lost off
+	// the edge of all of them.
+	minPanelWidth = 60
+	maxPanelWidth = 180
 )
 
 // PopupHeight leaves room for the translation whether live translation starts on
 // or off: a popup cannot be resized once open, and ctrl+l must never translate
 // into a pane with nowhere to show the result. With live off the draft has the
-// room instead.
-func PopupHeight() int {
-	return dialogRows + englishRows + PopupBorder
+// room instead. The rows the draft asks for are counted here as well, so the
+// height a caller reserves is the height the panel then fills.
+func PopupHeight(draftRows int) int {
+	return headerRows + footerRows + draftFrame + clampDraftRows(draftRows) + englishRows + PopupBorder
+}
+
+// clampDraftRows keeps a wanted row count between the ends config.Load refuses
+// to write past, with zero meaning this package's default.
+func clampDraftRows(rows int) int {
+	if rows == 0 {
+		return draftHeight
+	}
+	return min(max(rows, minDraftRows), maxDraftRows)
+}
+
+// clampPanelWidth does the same for the width the popup asks for, so a panel
+// sized by a caller that never reads config still lands on a window a terminal
+// can show.
+func clampPanelWidth(width int) int {
+	if width == 0 {
+		return PopupWidth
+	}
+	return min(max(width, minPanelWidth), maxPanelWidth)
 }
 
 type Model struct {
@@ -196,9 +243,15 @@ type Model struct {
 	prompter Prompter
 	options  Options
 	styles   styles
-	draft    vimarea.Model
-	spinner  spinner.Model
-	stage    stage
+	// palette is the slots the panel is drawn from, chosen once for the whole
+	// session so every frame of it is painted the same way.
+	palette frame.Palette
+	// contentCap is how wide the popup asked for, less the box frame: the
+	// widest the writing may get, whichever pane the popup ends up in.
+	contentCap int
+	draft      vimarea.Model
+	spinner    spinner.Model
+	stage      stage
 	// confirmWait is the number of the preview request the send key is waiting
 	// on while Options.Confirm translates the draft before it may go out. It is
 	// 0 whenever no confirmation is owed, so a cancelled preview reply can tell
@@ -261,7 +314,13 @@ type Model struct {
 }
 
 func New(ctx context.Context, prompter Prompter, options Options) Model {
-	look := newStyles()
+	// The two layout settings are asked for in whole rows and columns and are
+	// brought inside their ends here, once, so the model never has to wonder
+	// whether a caller went past them.
+	options.DraftRows = clampDraftRows(options.DraftRows)
+	options.PanelWidth = clampPanelWidth(options.PanelWidth)
+	palette := frame.PaletteFor(options.Theme)
+	look := newStyles(palette)
 
 	// Read mode keeps nothing: the text came from somewhere else, a reply to
 	// read is not a prompt being written, and copying twice costs nothing — so
@@ -280,7 +339,7 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 		vimarea.WithPlaceholder(placeholder),
 		vimarea.WithStyles(look.text, look.placeholder, look.cursorFor(options.Cursor)),
 	)
-	draft.SetHeight(draftHeight)
+	draft.SetHeight(options.DraftRows)
 
 	working := spinner.New()
 	working.Spinner = spinner.Dot
@@ -296,19 +355,26 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 		options.NoticeLinger = defaultNoticeLinger
 	}
 
+	// What the popup asked for, less its own frame: the width the writing is
+	// capped at, worked out before the model so that every resize — the one
+	// here and the ones after a draft came back — caps against the same number.
+	contentCap := options.PanelWidth - draftFrame
+
 	model := Model{
-		ctx:      ctx,
-		prompter: prompter,
-		options:  options,
-		styles:   look,
-		draft:    draft,
-		spinner:  working,
-		delivery: deliveryFor(options.Review),
+		ctx:        ctx,
+		prompter:   prompter,
+		options:    options,
+		styles:     look,
+		palette:    palette,
+		contentCap: contentCap,
+		draft:      draft,
+		spinner:    working,
+		delivery:   deliveryFor(options.Review),
 	}
 	if options.WithoutService {
 		model.options.Live = false
 	}
-	model.resize(maxContentWidth)
+	model.resize(model.contentCap)
 	if options.Drafts != nil {
 		kept, err := options.Drafts.Load()
 		model.loadFailure = err
@@ -319,7 +385,7 @@ func New(ctx context.Context, prompter Prompter, options Options) Model {
 			// so it is not, until ctrl+l says so.
 			model.heldBackLive = options.Live
 			model.options.Live = false
-			model.resize(maxContentWidth)
+			model.resize(model.contentCap)
 		}
 	}
 	// Text that arrived rather than being written still does not mark the box:
@@ -559,9 +625,10 @@ func (m *Model) refit() {
 }
 
 func (m *Model) resize(contentWidth int) {
-	// Never wider than the pane. A width clamped up past it wraps every line the
-	// popup draws, and an inline renderer then stacks frame on frame.
-	m.width = min(max(contentWidth, 1), maxContentWidth)
+	// Never wider than the pane, and never wider than the popup asked for. A
+	// width clamped up past either wraps every line the popup draws, and an
+	// inline renderer then stacks frame on frame.
+	m.width = min(max(contentWidth, 1), m.contentCap)
 	// The text area wraps at the width the box shows, or the box wraps again what
 	// the area already wrapped and words drop onto lines nobody asked for.
 	m.draft.SetWidth(m.contentWidth())
@@ -616,7 +683,7 @@ func (m Model) switchLive() (Model, tea.Cmd) {
 
 func (m Model) draftRows() int {
 	if m.pane.Height <= 0 {
-		return draftHeight
+		return m.options.DraftRows
 	}
 
 	rows := m.pane.Height - headerRows - footerRows - draftFrame

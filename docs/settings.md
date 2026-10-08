@@ -60,6 +60,14 @@ The API key is shown as dots and never written out in the window.
 | **vim** | `off` | `on` turns on vim bindings for the draft box (modal editing). |
 | **confirm** | `off` | `on` shows the English before anything is sent, so you can read it and confirm with `ctrl+d`. |
 | **keep draft** | `on` | `on` keeps your unfinished draft between sessions; `off` starts every panel with an empty box. |
+| **theme** | `auto` | Which colour scheme all three windows draw in (`TRANS_THEME` in `.env`). Step with `←` `→` through `auto`, `ocean`, `forest`, `amber` and `mono`. `auto` leaves the colours to the terminal; a name in `.env` the program has never heard of draws with the default rather than failing. This window repaints as you step — the panel and the selection window take it up the next time they open. |
+| **draft rows** | `6` | How many rows the panel's draft box asks the terminal for, from `4` to `16` (`TRANS_DRAFT_ROWS` in `.env`). The arrows step it by one and `enter` writes a number; a value outside the range is refused before anything is saved, and a hand-written `.env` line outside it is refused when the settings are read. The popup grows with it: the translation box keeps its five rows, so a draft that asks for more makes the whole popup that many rows taller. |
+| **panel width** | `110` | How many columns the panel popup asks for, from `60` to `180` (`TRANS_PANEL_WIDTH` in `.env`). Stepped with `←` `→` by one and written in with `enter`, checked against both ends before it is saved; a hand-written `.env` line outside them is refused when the settings are read. |
+
+A theme names slots of the terminal's palette rather than colours of its own:
+`auto`, `ocean`, `forest`, `amber` and `mono` only point the accent and the
+bright colours at slots 0-15, so no popup carries a shade the terminal did not
+choose and every window follows whichever theme the terminal is running.
 
 ### The chords
 

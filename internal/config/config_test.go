@@ -774,3 +774,98 @@ func TestAnUnreadableLimitIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// The theme is a name this package does not judge: whatever is written is
+// handed on, and leaving it out means the terminal keeps its own palette.
+func TestTheThemeIsReadAsItWasWrittenAndEmptyWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.Theme != "" {
+		t.Errorf("Theme is %q, want it empty so the terminal's palette stands", settings.Theme)
+	}
+
+	settings, err = config.Load(envFrom(map[string]string{
+		"TRANS_TARGET": "w1:p3",
+		"TRANS_THEME":  "dracula",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.Theme != "dracula" {
+		t.Errorf("Theme is %q, want the name from the environment", settings.Theme)
+	}
+}
+
+// The draft box asks for a number of rows; nobody asking gets the default and
+// a number nobody could ask for is refused by name rather than quietly changed.
+func TestTheDraftRowsDefaultToSixAndAValueOutsideTheEndsIsRefused(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.DraftRows != 6 {
+		t.Errorf("DraftRows is %d, want 6 by default", settings.DraftRows)
+	}
+
+	settings, err = config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":     "w1:p3",
+		"TRANS_DRAFT_ROWS": "10",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.DraftRows != 10 {
+		t.Errorf("DraftRows is %d, want 10 from TRANS_DRAFT_ROWS", settings.DraftRows)
+	}
+
+	for _, value := range []string{"99", "abc"} {
+		_, err := config.Load(envFrom(map[string]string{
+			"TRANS_TARGET":     "w1:p1",
+			"TRANS_DRAFT_ROWS": value,
+		}))
+		if err == nil || !strings.Contains(err.Error(), "TRANS_DRAFT_ROWS") {
+			t.Errorf("TRANS_DRAFT_ROWS=%s failed with %v, want the variable named", value, err)
+		}
+	}
+}
+
+// The popup asks for a width the same way: a default when nothing is said, a
+// number inside the ends when it is, and a refusal when it is not.
+func TestThePanelWidthDefaultsToOneHundredAndTenAndAnOutOfRangeNumberIsRefused(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.PanelWidth != 110 {
+		t.Errorf("PanelWidth is %d, want 110 by default", settings.PanelWidth)
+	}
+
+	settings, err = config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":      "w1:p3",
+		"TRANS_PANEL_WIDTH": "128",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.PanelWidth != 128 {
+		t.Errorf("PanelWidth is %d, want 128 from TRANS_PANEL_WIDTH", settings.PanelWidth)
+	}
+
+	for _, value := range []string{"30", "999"} {
+		_, err := config.Load(envFrom(map[string]string{
+			"TRANS_TARGET":      "w1:p1",
+			"TRANS_PANEL_WIDTH": value,
+		}))
+		if err == nil || !strings.Contains(err.Error(), "TRANS_PANEL_WIDTH") {
+			t.Errorf("TRANS_PANEL_WIDTH=%s failed with %v, want the variable named", value, err)
+		}
+	}
+}

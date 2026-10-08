@@ -50,7 +50,7 @@ every other line alone. Neither of them delivers anything.
 | `overlay` | The *Bubble Tea* program: the draft box, the header and footer, the keys. |
 | `selection` | The window that draws a selection and its translation together. It translates and scrolls; it never delivers. |
 | `settings` | The window that edits the settings: one row each for the service, its options, the panel's behaviour and the three chords, saved through `config.Save`. |
-| `frame` | What the three windows share: the palette, the boxes with their labels, the wrapped rows, and the scroll bar. The overlay had drawn its own copies of these before, which is how the two drifted. |
+| `frame` | What the three windows share: the table of built-in themes and the palette they name, the boxes with their labels, the wrapped rows, and the scroll bar. The overlay had drawn its own copies of these before, which is how the two drifted. |
 | `vimarea` | A text area with modal editing, used by the overlay. |
 | `config` | Settings from the environment and the `.env` in the config directory — read by `Load`, prepared and kept by `Prepare`, and rewritten line by line by `Save`. |
 | `draft`, `history`, `atomicfile` | An unfinished prompt on disk, one file per window; the record of prompts already delivered; and the write the draft and the settings file go through: a fresh file for its owner alone, moved into place so nothing is ever read half-written. The record appends to its own file as prompts go out, and only takes that rewrite when the oldest are trimmed. |

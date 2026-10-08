@@ -217,10 +217,22 @@ func opensOver(handle uintptr) bool {
 // centred over a 136-pixel window in the corner of the screen, and how a
 // finished prompt would be pasted into a window nobody is looking at.
 func FrontPane() Window {
+	return FrontPaneExcept(nil)
+}
+
+// FrontPaneExcept is FrontPane with the windows left out that are the
+// caller's own: a panel drawing in a terminal finds the window it should
+// deliver into by skipping the one it is drawing in, and a pane below it in
+// the z-order is then the window the author was working in before.
+func FrontPaneExcept(skip func(handle uintptr) bool) Window {
 	for handle := call(procGetForegroundWindow); handle != 0; handle = call(procGetWindow, handle, gwHwndNext) {
-		if opensOver(handle) {
-			return Window{Handle: handle, Title: Title(handle)}
+		if !opensOver(handle) {
+			continue
 		}
+		if skip != nil && skip(handle) {
+			continue
+		}
+		return Window{Handle: handle, Title: Title(handle)}
 	}
 	return Window{}
 }

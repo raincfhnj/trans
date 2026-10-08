@@ -63,6 +63,7 @@ The API key is shown as dots and never written out in the window.
 | **theme** | `auto` | Which colour scheme all three windows draw in (`TRANS_THEME` in `.env`). Step with `←` `→` through `auto`, `ocean`, `forest`, `amber` and `mono`. `auto` leaves the colours to the terminal; a name in `.env` the program has never heard of draws with the default rather than failing. This window repaints as you step — the panel and the selection window take it up the next time they open. |
 | **draft rows** | `6` | How many rows the panel's draft box asks the terminal for, from `4` to `16` (`TRANS_DRAFT_ROWS` in `.env`). The arrows step it by one and `enter` writes a number; a value outside the range is refused before anything is saved, and a hand-written `.env` line outside it is refused when the settings are read. The popup grows with it: the translation box keeps its five rows, so a draft that asks for more makes the whole popup that many rows taller. |
 | **panel width** | `110` | How many columns the panel popup asks for, from `60` to `180` (`TRANS_PANEL_WIDTH` in `.env`). Stepped with `←` `→` by one and written in with `enter`, checked against both ends before it is saved; a hand-written `.env` line outside them is refused when the settings are read. |
+| **panel host** | `terminal` | Where the panel opens (`TRANS_PANEL_HOST` in `.env`). `popup` is a window of its own over the pane it belongs on. `terminal` opens the panel beside the pane in front: Windows Terminal splits the pane and the panel runs in the new one on the right, delivering the prompt to the pane beside — the one it was split from — or to the window `TRANS_TARGET` names. On any other terminal the chord types `trans-window tui` into a prompt. `popup` is the panel in a window of its own over the pane. |
 
 A theme names slots of the terminal's palette rather than colours of its own:
 `auto`, `ocean`, `forest`, `amber` and `mono` only point the accent and the
@@ -100,7 +101,7 @@ environment.
 | `TRANS_TRAY` | `1` | `0` starts the daemon with no tray icon. |
 | `TRANS_CONFIG_DIR` | `%APPDATA%\trans` | Where the `.env` and `secrets.json` live. Environment only — the file is found *through* this directory, so a line inside it cannot move it. |
 | `TRANS_STATE_DIR` | `%LOCALAPPDATA%\trans\state` | Where an unfinished draft and the record of sent prompts are kept between sessions. |
-| `TRANS_TARGET` | none | The window the panel opens over when nothing is named in front of it: a handle (`0x1a2b`) or a title. Read by the panel rather than edited anywhere. |
+| `TRANS_TARGET` | none | The window the panel opens over when nothing is named in front of it: a handle (`0x1a2b`) or a title. For a panel in a terminal it is the window the prompt is delivered into. Read by the panel rather than edited anywhere. |
 
 ## Where the settings live
 

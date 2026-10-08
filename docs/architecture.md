@@ -19,6 +19,20 @@ a setting or a piece of text rather than a switch: the pane to open over, which
 the parent resolved while it was still the window in front, and the selection
 one of the windows was opened for.
 
+The panel can also be drawn where the author already is: `trans-window tui`
+runs the same Bubble Tea program on the terminal it is typed into, with no
+window of its own, and `TRANS_PANEL_HOST=terminal` makes the chord open it
+that way — beside the pane in front rather than over it. A Windows Terminal
+is asked to split that pane (`wt split-pane -V`) and the panel runs in the new
+one on the right, whatever the pane it was split from is running; any other
+terminal is typed into at a prompt instead, decided by `win32`'s reading of
+the process tree and the consoles behind it. The host is the only thing that
+differs: the box, the service, the drafts and the keys are the panel's own.
+A delivery beside its pane crosses over with `wt move-focus previous` — the
+two panes are each other's `previous` however the terminal laid them out —
+and the paste then goes through `wintarget` as it always did; a named window
+(`--target`, `TRANS_TARGET`) is pasted into without crossing at all.
+
 The panel is the draft box: on `alt+enter` the draft goes to a translation
 service and the result is handed back to the same window through `wintarget`:
 the window is brought forward and waited for, the text is put on the clipboard,
@@ -60,7 +74,8 @@ every other line alone. Neither of them delivers anything.
 | `tray` | The notification-area icon the daemon carries: its own hidden window and message loop on a thread of its own, and the menu that opens the panel, the settings, a reload, the logon entry and the end of the program. |
 | `setup` | The first-run doctor: what a working installation needs — the toolchain, the settings file, the service and its key, the programs on `PATH`, a speech voice — reported as lines or as one JSON object. |
 
-`cmd/trans-window` is the composition root for all three windows: it reads the
+`cmd/trans-window` is the composition root for all three windows and for the
+panel in a terminal: it reads the
 settings, resolves the key from wherever it is kept, asks `service` for the one
 that was chosen, wires the flow to its targets and starts the window its
 command line named — the panel, the selection, or the settings. It also carries

@@ -385,6 +385,42 @@ func TestTheTrayIsOnUnlessTurnedOff(t *testing.T) {
 	}
 }
 
+// The panel opens beside the pane the author is at by default, and in a
+// window of its own when the settings say so. A name outside those two is
+// refused: TRANS_PANEL_HOST=termnal would otherwise open the panel somewhere
+// nobody asked for.
+func TestThePanelOpensInTheTerminalUnlessTheSettingsSayPopup(t *testing.T) {
+	t.Parallel()
+
+	settings, err := config.Load(envFrom(map[string]string{"TRANS_TARGET": "w1:p3"}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if settings.PanelHost != config.HostTerminal {
+		t.Errorf("PanelHost is %q, want %q by default", settings.PanelHost, config.HostTerminal)
+	}
+
+	popup, err := config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":     "w1:p3",
+		"TRANS_PANEL_HOST": "popup",
+	}))
+	if err != nil {
+		t.Fatalf("Load returned unexpected error: %v", err)
+	}
+	if popup.PanelHost != config.HostPopup {
+		t.Errorf("PanelHost is %q, want %q for TRANS_PANEL_HOST=popup",
+			popup.PanelHost, config.HostPopup)
+	}
+
+	_, err = config.Load(envFrom(map[string]string{
+		"TRANS_TARGET":     "w1:p3",
+		"TRANS_PANEL_HOST": "termnal",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "TRANS_PANEL_HOST") {
+		t.Errorf("Load returned %v, want the unreadable host refused by name", err)
+	}
+}
+
 // The three windows the daemon opens are pressed apart by their own chords, and
 // each of them has one so a fresh installation answers a press at all.
 func TestEveryWindowHasItsOwnChord(t *testing.T) {

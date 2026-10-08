@@ -214,6 +214,37 @@ func heldKeys(modifiers uint32) []uintptr {
 	return held
 }
 
+// keyEventUnicode tags an event as a character rather than a key: the code
+// unit travels where the virtual key would be, and no scan code is read. It is
+// how text of any language is typed �� a path with spaces, a command line ��
+// when there is no chord to paste it with.
+const keyEventUnicode = 0x0004
+
+// Type writes text key event by key event, for what has no paste chord to go
+// out on: the command line a terminal is asked to run. Characters arrive as
+// they are written, so a terminal with its own ideas about chords still gets
+// the words and not a shortcut.
+func Type(text string) error {
+	// Windows takes UTF-16 code units, so a character outside the basic plane
+	// goes out as the two units it is written in �� each one a press of its own.
+	units := utf16.Encode([]rune(text))
+	events := make([]keyInput, 0, 2*len(units))
+	for _, unit := range units {
+		down := keyInput{key: unit, flags: keyEventUnicode}
+		up := keyInput{key: unit, flags: keyEventUnicode | keyEventKeyUp}
+		events = append(events, down, up)
+	}
+	seen, err := sendKeys(events)
+	if err != nil {
+		return err
+	}
+	if seen != len(events) {
+		return fmt.Errorf("typing went only partly through: %d of %d key events were taken",
+			seen, len(events))
+	}
+	return nil
+}
+
 // Enter presses return, which is what hands the prompt over in a pane that is
 // waiting for one. It is the one injection whose result is not reported back:
 // the caller has already decided the prompt is pasted, and a return that did

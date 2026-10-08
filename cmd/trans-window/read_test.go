@@ -312,7 +312,7 @@ func TestTheResultIsCopiedWhereAPasteTakesIt(t *testing.T) {
 	})
 
 	const result = "修复失败的测试"
-	if err := (copying{}).Insert(context.Background(), result); err != nil {
+	if err := (clipboardTarget{}).Insert(context.Background(), result); err != nil {
 		t.Fatalf("copying the result: %v", err)
 	}
 	if got := win32.ClipboardText(); got != result {

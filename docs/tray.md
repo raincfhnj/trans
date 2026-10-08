@@ -9,7 +9,7 @@ Right-click the icon in the notification area.
 
 | Item | What it does |
 | --- | --- |
-| Open panel | The same as pressing the panel chord: a panel over the window in front. |
+| Open panel | The same as pressing the panel chord: a panel over the window in front, or a panel split off beside that pane when `TRANS_PANEL_HOST=terminal` says so. |
 | Close panel | Asks every panel window to close. There is no panel process to toggle — one is spawned for each press and ends with its window — so this is what "close" means here. |
 | Settings… | The settings window, over the pane in front. |
 | Reload settings | Reads the settings again and claims the chords anew, so a chord changed in the settings window takes effect without restarting the daemon. |

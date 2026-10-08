@@ -38,14 +38,12 @@ import (
 	"trans/internal/draft"
 	"trans/internal/history"
 	"trans/internal/overlay"
-	"trans/internal/promptflow"
 	"trans/internal/selection"
 	"trans/internal/service"
 	"trans/internal/settings"
 	"trans/internal/translation"
 	"trans/internal/win32"
 	"trans/internal/winlog"
-	"trans/internal/wintarget"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -66,6 +64,10 @@ func main() {
 			// own. A person does not type this: what it draws is named on its own
 			// command line, which is the only place the child's switches live.
 			exit(runPopup(os.Args[2:]))
+		case "tui":
+			// The panel as a TUI in the terminal this is typed into: the same
+			// box, with the terminal as its frame instead of a popup.
+			exit(runTUI(os.Args[2:]))
 		case "list-windows":
 			listWindows()
 		case "translate":
@@ -178,6 +180,11 @@ func runOpen(arguments []string) error {
 		}
 		popup.probe = milliseconds
 	}
+	// Where the panel opens is the settings' word: a window of its own over the
+	// pane it belongs on, or the terminal in front, which runs it as a TUI.
+	if cfg.PanelHost == config.HostTerminal {
+		return openInTerminal(options)
+	}
 	return openOver(popup, options.target, cfg.PanelWidth, overlay.PopupHeight(cfg.DraftRows))
 }
 
@@ -217,8 +224,8 @@ const (
 
 // review answers whether the send key only types the prompt in, given what the
 // setting would have said.
-func (o popupOptions) review(setting bool) bool {
-	switch o.sending {
+func (s sending) review(setting bool) bool {
+	switch s {
 	case sendingReview:
 		return true
 	case sendingSend:
@@ -226,6 +233,10 @@ func (o popupOptions) review(setting bool) bool {
 	default:
 		return setting
 	}
+}
+
+func (o popupOptions) review(setting bool) bool {
+	return o.sending.review(setting)
 }
 
 // arguments is how this window is asked for: the command line the child is
@@ -490,14 +501,7 @@ func runPopup(arguments []string) error {
 func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) error {
 	// Read mode is the panel the other way round. The command line that opened
 	// it said so; without that this is the panel it always was.
-	read := options.read
-	if read {
-		// The translator is the one that was chosen — same provider, same
-		// credentials, same bill — pointed the other way: what comes in is text
-		// to read, what comes back is the author's own language.
-		cfg.Options.TargetLanguage = cfg.ReadLanguage
-	}
-	chosen := service.Choose(cfg)
+	chosen := panelService(cfg, options.read)
 
 	pasteKeys := cfg.PasteKeys
 	if pasteKeys == "" {
@@ -513,10 +517,13 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 		window.Handle, window.Title, chosen.Name, pasteKeys)
 	placeOver(window, cfg.PanelWidth, overlay.PopupHeight(cfg.DraftRows))
 
-	flow := panelFlow(chosen, window, pasteKeys, read)
+	// There are two ways a prompt reaches an agent and no more, which is why
+	// the flow names them both: sent, or only typed into its input.
+	sending, typing := deliveryTargets(window, pasteKeys, false)
+	flow := panelFlow(chosen, sending, typing, options.read)
 
-	// Closing the console window — the panel — ends the program by hanging up on
-	// it; ending on the signal instead of dying on it is what keeps the draft.
+	// Closing the console window ends the program by hanging up on it; ending
+	// on the signal instead of dying on it is what keeps the draft.
 	ctx, stopListening := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stopListening()
 
@@ -525,63 +532,25 @@ func runPanel(cfg *config.Settings, window win32.Window, options popupOptions) e
 	// program takes like any other drawing. An input method's pre-edit text then
 	// appears where the writing is instead of at the foot of the panel.
 	cursor := &overlay.CursorPlace{}
-	programOptions := []tea.ProgramOption{
+	program := tea.NewProgram(
+		panelModel(ctx, cfg, chosen, flow, &panelDrawing{
+			read:           options.read,
+			review:         options.review(!cfg.Submit),
+			prefill:        prefill,
+			prefillTrouble: prefillTrouble,
+			slot:           window.Title,
+			width:          cfg.PanelWidth,
+			cursor:         cursor,
+		}),
 		tea.WithContext(ctx),
 		// The panel is the whole window here, so it may have the alternate screen
 		// to itself: nothing of the terminal it was opened over is meant to show.
 		tea.WithAltScreen(),
 		tea.WithOutput(&cursorFollower{out: os.Stdout, place: cursor}),
-	}
-
-	program := tea.NewProgram(
-		overlay.New(ctx, flow, overlay.Options{
-			Service:        chosen.Name,
-			WithoutService: !chosen.Translates,
-			Trouble:        chosen.Trouble,
-			Language:       cfg.Options.TargetLanguage,
-			Review:         options.review(!cfg.Submit),
-			Vim:            cfg.Vim,
-			Live:           cfg.Live,
-			Confirm:        cfg.Confirm,
-			Pulse:          cfg.Pulse,
-			Logo:           cfg.Logo,
-			MaxDraft:       cfg.MaxDraft,
-			// Windows Terminal opens alt+enter full screen, so the panel says the key
-			// that does send: ctrl+d.
-			SendKey: "ctrl+d",
-			Cursor:  cursor,
-
-			Read:           read,
-			Prefill:        prefill,
-			PrefillTrouble: prefillTrouble,
-
-			Drafts:  drafts(cfg, window.Title),
-			History: historyLog(cfg, window.Title),
-
-			// The colour scheme and the box's size are chosen in the settings, so
-			// they reach the panel the same way the rest of the options do; the
-			// window that opens next is the one they take effect in.
-			Theme:      cfg.Theme,
-			DraftRows:  cfg.DraftRows,
-			PanelWidth: cfg.PanelWidth,
-		}),
-		programOptions...,
 	)
 
 	closeAfter(program, options.probe)
-
-	final, err := program.Run()
-	if kept, ok := final.(overlay.Model); ok {
-		if err := kept.KeepUnfinished(); err != nil {
-			fmt.Fprintln(os.Stderr, "trans-window:", err)
-		}
-	}
-	winlog.Notef("panel", "closed: %v", err)
-	// A window that was closed ends the program this way; it is not a failure.
-	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
-		return fmt.Errorf("running the panel: %w", err)
-	}
-	return nil
+	return runOverlay(program, "panel", "running the panel")
 }
 
 // panelPrefill is the text a read-mode panel opens on: the selection in the
@@ -596,34 +565,6 @@ func panelPrefill(cfg *config.Settings, window win32.Window, options popupOption
 	source, trouble := readSource(systemPorts, window.Handle, options.capture, cfg.CaptureKeys)
 	winlog.Notef("panel", "read mode: %d characters of source, trouble %v", len(source), trouble)
 	return source, trouble
-}
-
-// panelFlow wires the draft's two ways out: the service it is translated with,
-// and the window the finished prompt is delivered into. Writing means
-// translating the same draft again and again, so the preview goes through a
-// sentence cache that pays for each sentence once; Protecting sits outside it,
-// so a fenced block is taken out before the draft is split into sentences.
-func panelFlow(chosen service.Choice, window win32.Window,
-	pasteKeys string, read bool,
-) *promptflow.Flow {
-	translator := chosen.Translator
-	flowOptions := []promptflow.Option{
-		promptflow.WithPreviewTranslator(
-			translation.Protecting(translation.Segmented(translator))),
-	}
-	if spending, keepsCount := service.UsageReporter(translator); keepsCount {
-		flowOptions = append(flowOptions, promptflow.WithUsageReporter(spending))
-	}
-
-	// There are two ways a prompt reaches an agent and no more, which is why
-	// the flow names them both. In read mode neither happens: the translation
-	// is copied to the clipboard, and the author pastes it where it belongs.
-	var sending, typing promptflow.Target = wintarget.NewSending(window.Handle, pasteKeys),
-		wintarget.NewTyping(window.Handle, pasteKeys)
-	if read {
-		sending, typing = copying{}, copying{}
-	}
-	return promptflow.New(translation.Protecting(translator), sending, typing, flowOptions...)
 }
 
 // closeAfter closes the panel again after the time a probe asked for: a check

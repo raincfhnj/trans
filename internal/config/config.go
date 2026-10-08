@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -49,6 +50,10 @@ const (
 	// ThemeVar names the colour scheme the panel draws itself in; an empty
 	// value leaves the terminal's own palette in charge.
 	ThemeVar = "TRANS_THEME"
+	// PanelHostVar says where the panel opens: the terminal in front
+	// ("terminal", the default), where it runs as a TUI beside the pane it
+	// delivers into, or a window of its own over that pane ("popup").
+	PanelHostVar = "TRANS_PANEL_HOST"
 	// DraftRowsVar is how many rows the draft box of the panel asks its
 	// terminal for, and PanelWidthVar how many columns the popup asks for.
 	// Both ends of what may be asked for are named below, so the settings
@@ -76,6 +81,11 @@ const (
 	PanelWidthLow     = 60
 	PanelWidthHigh    = 180
 	DefaultPanelWidth = 110
+
+	// HostPopup and HostTerminal are the two answers PanelHostVar takes: the
+	// panel beside the pane the author is at, or in a window of its own.
+	HostPopup    = "popup"
+	HostTerminal = "terminal"
 
 	defaultLanguage = "EN-US"
 	dotenvName      = ".env"
@@ -159,6 +169,10 @@ type Settings struct {
 	// the frame package to fall back from, so config stays neutral about
 	// how the panel looks.
 	Theme string
+	// PanelHost is where the panel opens: "terminal" for the terminal in
+	// front, which runs the panel as a TUI beside the pane it delivers into,
+	// or "popup" for a window of its own over the pane it belongs on.
+	PanelHost string
 	// DraftRows is the number of rows the draft box of the panel asks for.
 	DraftRows int
 	// PanelWidth is the number of columns the panel popup asks for.
@@ -221,6 +235,7 @@ func Load(getenv func(string) string) (Settings, error) {
 		// know which names exist, so an unknown one is left for the frame
 		// package to fall back from.
 		Theme:      lookup(ThemeVar),
+		PanelHost:  given.oneOf(PanelHostVar, HostTerminal, HostPopup, HostTerminal),
 		DraftRows:  given.between(DraftRowsVar, DraftRowsLow, DraftRowsHigh, DefaultDraftRows),
 		PanelWidth: given.between(PanelWidthVar, PanelWidthLow, PanelWidthHigh, DefaultPanelWidth),
 
@@ -261,6 +276,21 @@ func (r *reading) flag(variable string, whenUnset bool) bool {
 		r.refuse(variable, value, "neither on (1, true, yes, on) nor off (0, false, no, off)")
 		return whenUnset
 	}
+}
+
+// oneOf reads a setting that takes one of a few named answers. A name outside
+// them is refused rather than quietly taken as the default: a typo in
+// TRANS_PANEL_HOST would otherwise open the panel somewhere nobody asked for.
+func (r *reading) oneOf(variable, fallback string, allowed ...string) string {
+	value := strings.ToLower(strings.TrimSpace(r.lookup(variable)))
+	if value == "" {
+		return fallback
+	}
+	if slices.Contains(allowed, value) {
+		return value
+	}
+	r.refuse(variable, value, "neither "+strings.Join(allowed, " nor "))
+	return fallback
 }
 
 // A zero means no number was given and the overlay picks its own.

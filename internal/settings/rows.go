@@ -125,6 +125,13 @@ func buildRows(settings config.Settings, options Options) []*row {
 			value: onOff(settings.KeepDraft),
 		},
 		{
+			// Where the panel opens: a popup over the pane it belongs on, or
+			// the terminal the author is at, which runs it as a TUI instead.
+			label: "panel host", variable: config.PanelHostVar, kind: choice,
+			choices: []string{config.HostPopup, config.HostTerminal},
+			value:   settings.PanelHost,
+		},
+		{
 			// An empty theme is auto: the palette the window has always drawn
 			// with, so it stands first and is shown under that name.
 			label: "theme", variable: config.ThemeVar, kind: choice,

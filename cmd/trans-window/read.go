@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"time"
@@ -115,13 +114,4 @@ func readSource(ports capturePorts, target uintptr, capture bool, keys string) (
 		return "", errNothingCaptured
 	}
 	return captured, nil
-}
-
-// copying is where a translation being read goes. Nothing reaches the window
-// in read mode: the author pastes the result wherever it belongs, so this is
-// the target the flow hands it to.
-type copying struct{}
-
-func (copying) Insert(_ context.Context, text string) error {
-	return win32.SetClipboardText(text)
 }

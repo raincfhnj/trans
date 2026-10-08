@@ -14,7 +14,7 @@ import (
 )
 
 // The window is a row per setting with the header and footer around them, so
-// its height follows the settings it offers — 19 of them, plus four.
+// its height follows the settings it offers — 20 of them, plus four.
 const (
 	PopupWidth = 100
 	chromeRows = 4

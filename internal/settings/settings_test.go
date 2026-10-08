@@ -334,7 +334,7 @@ func TestAChordThatCannotBePressedIsRefusedByName(t *testing.T) {
 		Chord:    refusingBogus,
 	})
 
-	stepDown(model, 15) // select copy
+	stepDown(model, 16) // select copy
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("bogus")})
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
@@ -359,7 +359,7 @@ func TestASavedHotkeySaysTheDaemonNeedsRestarting(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 16) // panel hotkey
+	stepDown(model, 17) // panel hotkey
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")})
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
@@ -428,7 +428,7 @@ func TestTheThemeRowStepsThroughTheFrameThemesAndDressesTheWindow(t *testing.T) 
 	if !bytes.Contains(shown, []byte("\x1b[35m")) {
 		t.Error("the window is not drawn with the accent of the palette with no name")
 	}
-	stepDown(model, 11) // theme
+	stepDown(model, 12) // theme
 
 	// Every arrow lands on the next theme the frame names, and by the time it
 	// is named the window is already wearing it: the border is lit with the
@@ -471,7 +471,7 @@ func TestTheDraftRowsArrowStepsItAndTheSaveWritesTheNumber(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 12) // draft rows, which stands on 6
+	stepDown(model, 13) // draft rows, which stands on 6
 	model.Send(tea.KeyMsg{Type: tea.KeyRight})
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 
@@ -494,7 +494,7 @@ func TestTheDraftRowsArrowNeverTakesTheNumberPastItsUpperEnd(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 12) // draft rows, which stands on 6
+	stepDown(model, 13) // draft rows, which stands on 6
 	for range 20 {
 		model.Send(tea.KeyMsg{Type: tea.KeyRight})
 	}
@@ -525,7 +525,7 @@ func TestANumberOutsideItsRangeIsRefusedAndTheFileStaysAsItWas(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 12) // draft rows
+	stepDown(model, 13) // draft rows
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyBackspace}) // the 6 that was standing there
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("99")})
@@ -555,7 +555,7 @@ func TestANumberInsideItsRangeIsWrittenToTheFile(t *testing.T) {
 		Chord:    acceptingChord,
 	})
 
-	stepDown(model, 12) // draft rows
+	stepDown(model, 13) // draft rows
 	model.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	model.Send(tea.KeyMsg{Type: tea.KeyBackspace}) // the 6 that was standing there
 	model.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("10")})

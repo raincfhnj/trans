@@ -37,7 +37,6 @@ type Client struct {
 	httpClient     *httpapi.Transport
 	endpoint       string
 	targetLanguage string
-	email          string
 }
 
 type Option func(*Client)
@@ -48,12 +47,6 @@ func WithEndpoint(endpoint string) Option {
 
 func WithTargetLanguage(language string) Option {
 	return func(c *Client) { c.targetLanguage = languageCode(language) }
-}
-
-// WithEmail adds the address the service asks for when a lot is translated; it
-// raises the daily allowance rather than being used for anything else.
-func WithEmail(email string) Option {
-	return func(c *Client) { c.email = email }
 }
 
 func New(options ...Option) *Client {
@@ -103,10 +96,6 @@ func (c *Client) translateOne(ctx context.Context, draft string) (string, error)
 		"q":        {draft},
 		"langpair": {autodetect + "|" + c.targetLanguage},
 	}
-	if c.email != "" {
-		query.Set("de", c.email)
-	}
-
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+"?"+query.Encode(), http.NoBody)
 	if err != nil {
 		return "", fmt.Errorf("preparing the translation request: %w", err)
